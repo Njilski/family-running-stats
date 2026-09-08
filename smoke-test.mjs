@@ -1,209 +1,202 @@
 // Headless smoke test — the safety net. Run it before every commit:
 //
-//   rm -rf data && node server.js &          (local password is "run")
+//   rm -rf data && node server.js &          (local family code is 1234)
 //   CHROMIUM=/opt/pw-browsers/chromium node smoke-test.mjs
 //
-// Covers: anonymous read works and anonymous writes are refused; wrong password
-// refused; unlock; add runners; log runs through the real form; stats, charts,
-// records and the run log reflect them; edit and delete a run; remove a runner
-// takes their runs with them; lock hides editing again. Also checks the stats
-// module directly for the cases a browser walk-through would not notice.
+// Part 0 checks the maths directly (points snapshot, periods, medals, recap,
+// nudges). Part 1 drives a real phone-sized browser through every screen:
+// login with the family code, log a run through the steppers, the toast and
+// the leader change, Mig + en-mod-en, Justering (and that old runs keep their
+// snapshot), Familien, Ugens resultat, Beskeder, lock/switch member.
 
 import { chromium } from 'playwright';
-import { computeStats } from './src/stats.js';
+import { computeAll, weekStreak } from './src/stats.js';
+import { validateActivity, newMember, SEED_MEMBERS } from './src/model.js';
+import { nudgesForSave, nudgesFor } from './src/nudges.js';
 
 const BASE = process.env.BASE || 'http://localhost:3000';
-const PASSWORD = process.env.EDIT_PASSWORD || 'run';
+const PIN = process.env.FAMILY_PIN || '1234';
 const ok = (cond, msg) => { if (!cond) throw new Error('FAILED: ' + msg); console.log('ok  ', msg); };
 
-// --- 0. Stats module, pure ---------------------------------------------------------
+// --- 0. Pure logic ----------------------------------------------------------------------
 {
-  const today = new Date('2026-09-08T12:00:00');
-  const members = [{ id: 'a', name: 'A', colorSlot: 0 }, { id: 'b', name: 'B', colorSlot: 1 }];
-  const run = (memberId, date, distanceKm, durationSec = null) => ({ id: date + memberId, memberId, date, distanceKm, durationSec, createdAt: date });
-  const runs = [
-    run('a', '2026-09-07', 10.5, 3000),   // 10k candidate, pace 285.7
-    run('a', '2026-08-31', 10.0, 2900),   // 10k candidate, pace 290 → slower pace, longer distance loses
-    run('a', '2026-08-24', 5.0, 1500),
-    run('a', '2026-08-10', 12.5, 3900),   // 12.5 ≤ 10×1.2 → also 10k-eligible
-    run('a', '2026-07-01', 3.0),          // untimed: excluded from pace
-    run('b', '2026-09-01', 21.2, 7200),
-    run('b', '2025-12-31', 8.0, 2400),    // last year: not in year totals
+  const now = new Date('2026-09-08T12:00:00'); // Tuesday, ISO week 37
+  const members = SEED_MEMBERS.map(newMember);
+  const byId = Object.fromEntries(members.map((m) => [m.id, m]));
+  let t = 0;
+  const act = (id, date, km, minutes) => {
+    const { activity, error } = validateActivity({ date, km, minutes, feel: 'ok' }, byId[id], '2026-09-08');
+    if (error) throw new Error(error);
+    activity.createdAt = `2026-09-08T00:00:${String(t++).padStart(2, '0')}Z`;
+    return activity;
+  };
+  const acts = [
+    act('maja', '2026-09-07', 5.0, 30), act('andreas', '2026-09-08', 6.2, 32), act('aksel', '2026-09-08', 1.6, 15),
+    // last week (36): Maja wins on points
+    act('maja', '2026-09-01', 6.0, 34), act('andreas', '2026-09-02', 6.0, 30), act('asger', '2026-09-03', 3.5, 22),
+    // week 35: Aksel wins on adjusted points (2.0 × 2.4 = 4.8 > 4.0)
+    act('aksel', '2026-08-26', 2.0, 18), act('andreas', '2026-08-25', 4.0, 20),
+    act('johan', '2025-12-30', 2.0, 15), // last year
   ];
-  const s = computeStats(members, runs, today);
-  ok(s.family.year.km === 62.2 && s.family.total.km === 70.2, 'year vs all-time totals separate last year');
-  const a = s.perMember[0];
-  ok(a.total.paceSecPerKm === Math.round((3000 + 2900 + 1500 + 3900) / (10.5 + 10 + 5 + 12.5)), 'pace ignores untimed runs');
-  ok(a.bests.find((b) => b.key === '10k').run.id === '2026-09-07a', 'best 10k picks the fastest pace, not the shortest time');
-  ok(a.bests.find((b) => b.key === '5k').run.id === '2026-08-24a', 'best 5k found');
-  ok(a.bests.find((b) => b.key === 'half').run === null && s.perMember[1].bests.find((b) => b.key === 'half').run.id === '2026-09-01b', 'half marathon only for B');
-  // A ran in ISO weeks of Sep 7, Aug 31, Aug 24, (gap Aug 17), Aug 10. Today Sep 8 is in the Sep 7 week → streak 3.
-  ok(a.weekStreak === 3, `week streak counts back from this week (got ${a.weekStreak})`);
-  // B's last run was Sep 1 (week of Aug 31); this week has none yet, so the streak is still alive at 1.
-  ok(s.perMember[1].weekStreak === 1, 'a streak is not broken by the current week having no run yet');
-  ok(s.monthly.months.length === 12 && s.monthly.months.at(-1) === '2026-09', 'twelve months ending now');
-  ok(s.monthly.series[0].km.at(-1) === 10.5 && s.monthly.series[0].km.at(-2) === 27.5, 'monthly km per member');
-  ok(s.cumulativeYear.days.length === 251 && s.cumulativeYear.series[0].km.at(-1) === 41, 'cumulative reaches the year total on today');
-  ok(s.records.longestRun.name === 'B' && s.records.mostKmYear.name === 'A', 'family records pick the right holder');
-  const empty = computeStats([], [], today);
-  ok(empty.family.total.runs === 0 && empty.records.longestRun === null, 'empty data does not crash');
+  ok(acts[2].points === 3.84 && acts[2].adjustmentAtLog === 2.4, 'points = km × adjustment snapshot');
+  const s = computeAll(members, acts, now);
+  const week = s.periods.week.rows;
+  ok(week[0].memberId === 'andreas' && week[0].points === 6.2 && week[1].memberId === 'maja' && week[1].points === 5.3, 'week standings ranked on points');
+  ok(s.periods.week.rowsRaw[0].memberId === 'andreas', 'raw km ordering available');
+  ok(s.periods.month.rows.find((r) => r.memberId === 'andreas').km === 12.2, 'month is a running total');
+  ok(s.periods.year.rows.find((r) => r.memberId === 'johan').runs === 0 && s.periods.all.rows.find((r) => r.memberId === 'johan').runs === 1, 'year excludes last year, all-time includes it');
+  ok(s.periods.week.familyKm === 12.8, 'family km this week');
+  const medals = Object.fromEntries(s.medals.map((m) => [m.memberId, m.weeks]));
+  ok(medals.maja === 1 && medals.aksel === 1 && medals.andreas === 0, `medals count closed weeks only, on adjusted points (${JSON.stringify(medals)})`);
+  ok(s.recap.isoWeek === 36 && s.recap.closed && s.recap.winnerId === 'maja' && s.recap.margin === 0.3, 'recap is last week, with margin');
+  ok(s.recap.taunt.includes('margen'), 'close-margin taunt');
+  ok(weekStreak(acts.filter((a) => a.memberId === 'andreas'), now) === 3, 'week streak counts back from this week');
+  ok(s.members.find((m) => m.memberId === 'andreas').week7.length === 7 && s.members.find((m) => m.memberId === 'andreas').week7[6].km === 6.2, '7-day bars end today');
+  ok(s.family.biggestWeek.isoWeek === 36 && s.family.longestRun.memberId === 'andreas', 'family records');
+
+  // Changing an adjustment must not rewrite history.
+  byId.aksel.adjustment = 3.0;
+  const s2 = computeAll(members, acts, now);
+  ok(s2.periods.week.rows.find((r) => r.memberId === 'aksel').points === 3.8, 'old runs keep their logged adjustment');
+  byId.aksel.adjustment = 2.4;
+
+  // Nudges: Andreas takes the lead from Maja → she is told; Aksel closes in → nothing (gap 2.4 but leader unchanged... check crossing rule).
+  const before = computeAll(members, acts.slice(0, 1).concat(acts.slice(3)), now).periods.week;
+  const afterActs = acts.slice(0, 2).concat(acts.slice(3));
+  const after = computeAll(members, afterActs, now).periods.week;
+  const nudges = nudgesForSave({ members, actor: byId.andreas, activity: acts[1], now, before, after: { ...after, activities: afterActs } });
+  ok(nudges.some((n) => n.kind === 'OVERHALET' && n.to === 'maja' && n.text.includes('førstepladsen')), 'overtaken nudge goes to the old leader');
+  ok(nudges.some((n) => n.kind === 'STIME' && n.to === null), 'streak nudge for everyone');
+  const seen = nudgesFor(byId.maja, nudges, now);
+  ok(seen.some((n) => n.kind === 'OVERHALET') && !seen.some((n) => n.kind === 'NY TUR'), 'Maja sees the overtake, not every-run (pref off)');
+  ok(nudgesFor(byId.andreas, nudges, now).every((n) => n.kind !== 'STIME'), 'you do not get nudged about yourself');
+  const empty = computeAll(members, [], now);
+  ok(empty.recap.empty && empty.periods.week.rows.length === 5, 'empty data does not crash');
 }
 
-// --- 1. Browser --------------------------------------------------------------------
+// --- 1. Browser ------------------------------------------------------------------------------
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM || undefined });
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+const ctx = await browser.newContext({ viewport: { width: 402, height: 874 }, locale: 'da-DK', timezoneId: 'Europe/Copenhagen' });
 const page = await ctx.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-// The test deliberately provokes 401/409/400 replies; Chromium logs each as a console error.
+// The test deliberately provokes 401s; Chromium logs each as a console error.
 page.on('console', (m) => { if (m.type() === 'error' && !/status of 4\d\d/.test(m.text())) errors.push(`console: ${m.text()}`); });
-page.on('dialog', (d) => d.accept(d.type() === 'prompt' ? 'Andreas G.' : undefined));
 
-// Anonymous: read yes, write no.
-const anon = await ctx.request.get(`${BASE}/api/summary`);
-ok(anon.ok(), 'anonymous read of /api/summary');
-const w1 = await ctx.request.post(`${BASE}/api/members`, { data: { name: 'Intruder' } });
-ok(w1.status() === 401, 'anonymous member create is refused');
-const w2 = await ctx.request.post(`${BASE}/api/runs`, { data: { memberId: 'x', date: '2026-01-01', distanceKm: 5 } });
-ok(w2.status() === 401, 'anonymous run create is refused');
-const bad = await ctx.request.post(`${BASE}/api/unlock`, { data: { password: 'wrong' } });
-ok(bad.status() === 401, 'wrong password refused');
+const anon = await ctx.request.get(`${BASE}/api/state`);
+ok(anon.status() === 401, 'state requires login');
+const fam = await (await ctx.request.get(`${BASE}/api/family`)).json();
+ok(fam.members.length === 5 && !('adjustment' in fam.members[0]), 'family tiles are public and minimal');
+const bad = await ctx.request.post(`${BASE}/api/login`, { data: { memberId: 'maja', pin: '0000' } });
+ok(bad.status() === 401, 'wrong family code refused');
 
+// Login screen → Aksel with the code.
 await page.goto(BASE);
-await page.waitForSelector('#emptyState:not(.d-none)');
-ok(await page.isHidden('#addRunBtn'), 'edit controls hidden while locked');
+await page.waitForSelector('.login');
+ok(await page.isDisabled('#pinInput'), 'code entry waits for a name');
+await page.click('[data-pick="aksel"]');
+await page.fill('#pinInput', '9999');
+await page.waitForSelector('.err');
+ok((await page.textContent('.err')).includes('kode'), 'wrong code shows a message');
+await page.fill('#pinInput', PIN);
+await page.waitForSelector('.hero');
+ok((await page.textContent('.hero .name')).includes('Ingen'), 'empty board says so');
+ok((await page.textContent('.tabs .on')) === 'TAVLEN', 'lands on Tavlen');
 
-// Unlock through the UI.
-await page.click('#unlockBtn');
-await page.fill('#password', 'nope');
-await page.click('#unlockForm button[type=submit]');
-await page.waitForSelector('#unlockError:not(.d-none)');
-await page.fill('#password', PASSWORD);
-await page.click('#unlockForm button[type=submit]');
-await page.waitForSelector('#addRunBtn:not(.d-none)', { timeout: 5000 });
-ok(true, 'unlock via the form shows edit controls');
+// Log a run with the steppers: 6,0 → 2,0 km, 34 → 19 min.
+await page.click('[data-go="log"]');
+await page.waitForSelector('.stepper');
+ok((await page.textContent('.runner')) === 'Aksel', 'log screen is for the signed-in member only');
+for (let i = 0; i < 8; i++) await page.click('.stepper:not(.small) button:not(.plus)');
+ok((await page.textContent('#distVal')) === '2,0', 'distance stepper, min 0,5 respected');
+for (let i = 0; i < 3; i++) await page.click('.stepper.small button:not(.plus)');
+ok((await page.textContent('.pace-note')).includes('TEMPO 9:30'), 'pace computed live');
+ok((await page.textContent('.pts-note')).includes('4,8 POINT'), 'points preview uses the adjustment');
+await page.click('[data-feel="haard"]');
+await page.click('[data-act="save"]');
+await page.waitForSelector('.toast');
+ok((await page.textContent('.toast')).includes('GEMT · +2,0 KM (4,8 POINT)'), 'toast after save');
+ok((await page.textContent('.hero .name')) === 'AKSEL', 'Aksel leads on adjusted points');
+await page.click('[data-act="toggleMode"]');
+ok((await page.textContent('.hero .top span:last-child')) === 'RÅ KM', 'mode toggles to raw km');
+await page.click('[data-act="toggleMode"]');
 
-// Add two runners.
-await page.click('#membersBtn');
-await page.waitForSelector('#membersModal.show');
-for (const name of ['Andreas', 'Sofie']) {
-  await page.fill('#memberName', name);
-  await page.click('#memberForm button[type=submit]');
-  await page.waitForFunction((n) => document.querySelector('#memberList').textContent.includes(n), name);
-}
-await page.fill('#memberName', 'andreas');
-await page.click('#memberForm button[type=submit]');
-await page.waitForSelector('#memberError:not(.d-none)');
-ok((await page.textContent('#memberError')).includes('already'), 'duplicate runner name refused');
-await page.click('#membersModal .btn-close');
-await page.waitForSelector('#membersModal', { state: 'hidden' });
+// Log yesterday too, picking the date.
+await page.click('[data-go="log"]');
+await page.click('[data-day="yest"]');
+await page.click('[data-act="save"]');
+await page.waitForSelector('.toast');
+ok((await page.$$('.row')).length === 5, 'five rows on the board');
+ok((await page.locator('.row').first().locator('.m').textContent()).includes('2 ture'), 'two runs counted');
 
-// Log runs through the real form.
-const today = new Date();
-const iso = (d) => d.toISOString().slice(0, 10);
-const daysAgo = (n) => { const d = new Date(today); d.setDate(d.getDate() - n); return iso(d); };
-async function logRun(member, date, km, h, m, s, notes = '') {
-  await page.click('#addRunBtn');
-  await page.waitForSelector('#runModal.show');
-  await page.selectOption('#runMember', { label: member });
-  await page.fill('#runDate', date);
-  await page.fill('#runKm', String(km));
-  await page.fill('#runH', String(h)); await page.fill('#runM', String(m)); await page.fill('#runS', String(s));
-  await page.fill('#runNotes', notes);
-  await page.click('#runForm button[type=submit]');
-  // Wait for the modal to close, but surface a form error instead of timing out.
-  await page.waitForFunction(() => !document.querySelector('#runModal.show') || !document.querySelector('#runError').classList.contains('d-none'));
-  if (await page.isVisible('#runError')) throw new Error('run form error: ' + (await page.textContent('#runError')));
-  await page.waitForSelector('#runModal', { state: 'hidden' });
-}
-await logRun('Andreas', daysAgo(1), 10.2, 0, 50, 0, 'Lakes loop');
-await logRun('Andreas', daysAgo(8), 5, 0, 24, 30);
-await logRun('Sofie', daysAgo(2), 21.1, 1, 55, 0, 'Half marathon!');
-await page.waitForFunction(() => document.querySelectorAll('#runRows tr[data-id]').length === 3);
-ok(true, 'three runs logged via the form');
+// Andreas logs 6,2 km via the API and takes the lead → Aksel gets a nudge.
+const a = await browser.newContext({ timezoneId: 'Europe/Copenhagen' });
+await a.request.post(`${BASE}/api/login`, { data: { memberId: 'andreas', pin: PIN } });
+const posted = await a.request.post(`${BASE}/api/activities`, { data: { date: new Date().toISOString().slice(0, 10), km: 20, minutes: 100, feel: 'let' } });
+ok(posted.ok(), 'Andreas logs via API');
+await page.click('[data-go="board"]');
+await page.waitForFunction(() => document.querySelector('.hero .name')?.textContent === 'ANDREAS');
+ok(true, 'leader changes after another member logs');
+ok((await page.textContent('.btn-msgs')).trim() === 'BESKEDER 1', 'Aksel has one message');
+await page.click('[data-go="nudges"]');
+await page.waitForSelector('.nudge');
+ok((await page.textContent('.nudge .txt')).includes('Andreas har lige logget 20,0 km'), 'overtaken message text');
+await page.click('.nudge .rm');
+await page.waitForFunction(() => document.querySelectorAll('.nudge').length === 0);
+ok(true, 'dismiss removes the message');
+await page.click('[data-pref="everyRun"]');
+await page.waitForSelector('[data-pref="everyRun"] .switch.on');
+const prefs = await (await a.request.get(`${BASE}/api/state`)).json();
+ok(prefs.prefs.everyRun === false, 'prefs are per member');
+await page.click('[data-pref="everyRun"]');
 
-// Validation surfaces in the form.
-await page.click('#addRunBtn');
-await page.waitForSelector('#runModal.show');
-await page.fill('#runDate', daysAgo(0));
-await page.fill('#runKm', '0');
-await page.evaluate(() => document.getElementById('runKm').removeAttribute('min'));
-await page.click('#runForm button[type=submit]');
-await page.waitForSelector('#runError:not(.d-none)');
-ok((await page.textContent('#runError')).includes('Distance'), 'zero distance rejected with a message');
-await page.click('#runModal .btn-close');
-await page.waitForSelector('#runModal', { state: 'hidden' });
+// Mig: rank, stats, en mod en.
+await page.click('[data-go="me"]');
+await page.waitForSelector('.me-head');
+ok((await page.textContent('.me-head .n')) === 'Aksel' && (await page.textContent('.badge .v')) === '2', 'Mig shows rank 2');
+ok((await page.$$('.bars7 > div')).length === 7, 'seven day bars');
+await page.click('[data-rival="andreas"]');
+ok((await page.textContent('.verdict')).includes('TABER'), 'head to head verdict');
+await page.click('[data-view="maja"]');
+ok((await page.textContent('.me-head .n')) === 'Maja', 'viewing another member');
 
-// Stats reflect the data.
-const kmYear = await page.textContent('#statKmYear');
-ok(kmYear.replace(',', '.') === '36.3' || kmYear === '36,3', `family km this year = ${kmYear}`);
-ok((await page.textContent('#statRunsYear')) === '3', 'runs this year = 3');
-ok((await page.$$('#monthlyChart .bar')).length >= 2, 'monthly bars drawn');
-ok((await page.$$('#cumChart polyline.line')).length === 2, 'one cumulative line per runner');
-ok((await page.$$('#monthlyLegend .dot')).length === 2, 'legend present for two runners');
-const records = await page.textContent('#records');
-ok(records.includes('Half marathon') && records.includes('Sofie') && records.includes('1:55:00'), 'half-marathon record credited to Sofie');
-ok(records.includes('Longest run') && records.includes('21.1'), 'longest run record');
-await page.click('#monthlyTableToggle');
-await page.waitForSelector('#monthlyTable:not(.d-none)');
-ok((await page.textContent('#monthlyTable')).includes('Andreas'), 'monthly table view available');
-await page.click('#monthlyTableToggle');
+// Justering: Aksel is not admin → only his own row is editable; history keeps its snapshot.
+await page.click('[data-go="setup"]');
+await page.waitForSelector('.frow');
+ok((await page.textContent('.adm')).includes('KUN DIN EGEN'), 'non-admin sees the restriction');
+ok(await page.isDisabled('[data-adj="andreas"][data-d="0.05"]'), 'other rows disabled for non-admin');
+for (let i = 0; i < 4; i++) await page.click('[data-adj="aksel"][data-d="0.05"]');
+ok((await page.textContent('.frow.me .v')) === '×2,60', 'stepper in steps of 0,05');
+await page.click('[data-act="saveAdjust"]');
+await page.waitForSelector('.hero');
+ok((await page.locator('.row').nth(1).locator('.m').textContent()).includes('×2,60') && (await page.locator('.row').nth(1).locator('.sc b').textContent()) === '19,2', 'adjustment saved; old runs keep 2,0×2,40 + 6,0×2,40 = 19,2 points');
+const forbidden = await ctx.request.put(`${BASE}/api/members/andreas/adjustment`, { data: { adjustment: 1.5 } });
+ok(forbidden.status() === 403, 'non-admin cannot change others via API either');
 
-// Tooltip on hover.
-const bar = (await page.$$('#monthlyChart .hit'))[0];
-await bar.hover();
-await page.waitForSelector('#monthlyChart .chart-tip:not(.d-none)');
-ok((await page.textContent('#monthlyChart .chart-tip')).includes('km'), 'bar tooltip shows km');
+// Familien.
+await page.click('[data-go="family"]');
+await page.waitForSelector('.share');
+ok((await page.textContent('.family-total b')) === '28,0', 'family km sums everyone');
+ok((await page.$$('.medal')).length === 5, 'medal cabinet lists everyone');
 
-// Edit a run: change Andreas' 5 km to 6 km.
-await page.click('#runRows tr:nth-child(3) .edit-run');
-await page.waitForSelector('#runModal.show');
-ok((await page.inputValue('#runKm')) === '5', 'edit form prefilled');
-await page.fill('#runKm', '6');
-await page.click('#runForm button[type=submit]');
-await page.waitForSelector('#runModal', { state: 'hidden' });
-await page.waitForFunction(() => document.querySelector('#statKmYear').textContent.replace(',', '.') === '37.3');
-ok(true, 'editing a run updates the stats');
+// Recap poster and share (clipboard fallback).
+await page.click('[data-go="board"]');
+await page.click('[data-go="recap"]');
+await page.waitForSelector('.poster');
+ok((await page.textContent('.poster .kick')).startsWith('UGE '), 'poster shows the week');
+ok(await page.isHidden('.tabs'), 'poster has no chrome');
+await ctx.grantPermissions(['clipboard-read', 'clipboard-write']);
+await page.click('[data-act="share"]');
+await page.waitForSelector('.toast');
+ok((await page.textContent('.toast')).includes('KOPIERET'), 'share falls back to clipboard');
 
-// Filter the log.
-await page.selectOption('#logFilter', { label: 'Sofie' });
-ok((await page.$$('#runRows tr[data-id]')).length === 1, 'log filter narrows to one runner');
-await page.selectOption('#logFilter', '');
+// Switch member = logout to the login screen.
+await page.click('[data-go="me"]');
+await page.click('[data-act="logout"]');
+await page.waitForSelector('.login');
+ok((await ctx.request.get(`${BASE}/api/state`)).status() === 401, 'logout clears the session');
 
-// Delete a run via the edit form (confirm dialog auto-accepted).
-await page.click('#runRows tr:nth-child(1) .edit-run');
-await page.waitForSelector('#runModal.show');
-await page.click('#runDeleteBtn');
-await page.waitForSelector('#runModal', { state: 'hidden' });
-await page.waitForFunction(() => document.querySelectorAll('#runRows tr[data-id]').length === 2);
-ok(true, 'delete run');
-
-// Rename and remove a runner (prompt/confirm auto-answered).
-await page.click('#membersBtn');
-await page.waitForSelector('#membersModal.show');
-await page.click('#memberList li:nth-child(1) .rename-member');
-await page.waitForFunction(() => document.querySelector('#memberList').textContent.includes('Andreas G.'));
-ok(true, 'rename runner');
-await page.click('#memberList li:nth-child(2) .remove-member');
-await page.waitForFunction(() => document.querySelectorAll('#memberList li[data-id]').length === 1);
-await page.click('#membersModal .btn-close');
-await page.waitForSelector('#membersModal', { state: 'hidden' });
-await page.waitForFunction(() => document.querySelectorAll('#runRows tr[data-id]').length === 1);
-ok(true, 'removing a runner removes their runs');
-
-// CSV export.
-const csv = await (await ctx.request.get(`${BASE}/api/export.csv`)).text();
-ok(csv.startsWith('date,runner,distance_km') && csv.split('\n').length === 2, 'CSV export has header + 1 run');
-
-// Lock.
-await page.click('#lockBtn');
-await page.waitForSelector('#unlockBtn:not(.d-none)');
-ok(await page.isHidden('#addRunBtn'), 'lock hides edit controls');
-const w3 = await ctx.request.post(`${BASE}/api/runs`, { data: {} });
-ok(w3.status() === 401, 'writes refused again after lock');
-
-await page.screenshot({ path: 'smoke-dashboard.png', fullPage: true });
+await page.screenshot({ path: 'smoke-board.png', fullPage: true });
 await browser.close();
-
 if (errors.length) throw new Error('Browser errors:\n' + errors.join('\n'));
 console.log('\nALL GREEN');

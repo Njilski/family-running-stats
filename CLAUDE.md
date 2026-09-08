@@ -1,4 +1,4 @@
-# Working on Family Running Stats
+# Working on Familiens Løbeklub
 
 Context for Claude sessions picking this project up. It is deliberately built
 the same way as `athenas-mailjet-speaker` (same folder on Andreas' Mac), so the
@@ -6,10 +6,12 @@ habits from that project carry over unchanged.
 
 ## What this is
 
-Andreas' family logs runs; the page shows the stats. Public read, one shared
-family password to edit. Storage: Firestore in the shared Athenas GCP project,
-collections `running_members` and `running_runs`. Hosted on Cloud Run as
-`family-running-stats` in `europe-west1`, deployed automatically from `main`.
+Andreas' family (Andreas 44, Maja 42, Asger 11, Johan 9, Aksel 6) logs runs;
+the app ranks them on age-adjusted points. The UI is a faithful build of the
+"Familiens Løbeklub" design handoff (Modernist system, Danish copy, 8 screens).
+Storage: Firestore in the shared Athenas GCP project, collections
+`running_members`, `running_activities`, `running_nudges`. Hosted on Cloud Run
+as `family-running-stats` in `europe-west1`, deployed automatically from `main`.
 
 ## How Andreas works on it with Claude
 
@@ -18,12 +20,10 @@ collections `running_members` and `running_runs`. Hosted on Cloud Run as
   for lock files), and works there through the linked computer.
 - Pushes use the fine-grained token in `~/Claude/.athenas-git-credentials`
   (expires 7 December 2026) via the same `credential.helper` config as the
-  speaker portal. **Never read, print or move the token.** If a push is
-  refused with 403, the token probably lacks access to this repo — that is for
-  Andreas to fix in GitHub settings, not for Claude to work around.
-- Run `smoke-test.mjs` before every commit. It needs Chromium; in the cloud
-  workspace that is `CHROMIUM=/opt/pw-browsers/chromium`. It also needs an
-  empty store: `rm -rf data` first.
+  speaker portal. **Never read, print or move the token.**
+- Develop and test in the cloud workspace (Chromium at
+  `/opt/pw-browsers/chromium`), then copy the tree to the Mac and commit there.
+- Run `smoke-test.mjs` before every commit. It needs an empty store: `rm -rf data`.
 - Do not `pkill -f "node server.js"` — it matches the agent's own shell and
   kills it. Use `fuser -k 3000/tcp`.
 - Markdown-only pushes do not trigger a deploy (`paths-ignore` in the workflow).
@@ -31,79 +31,80 @@ collections `running_members` and `running_runs`. Hosted on Cloud Run as
 ## Layout
 
 ```
-server.js               Routes. requireEdit guards every write.
-src/stats.js            All derived numbers. Pure: (members, runs, today) → stats.
-src/model.js            validateRun() — the only place a run's shape is decided.
-src/store*.js           Facade + Firestore + JSON backends, identical async API.
-public/app.js           One fetch of /api/summary renders everything.
-public/charts.js        SVG charts, no library.
-smoke-test.mjs          Stats unit checks + full browser walk-through.
+server.js        Routes. requireMember on everything but /api/family and /api/login.
+src/stats.js     computeAll(members, activities, now) → every number on every screen.
+src/nudges.js    nudgesForSave (before/after standings) + nudgesFor(member).
+src/model.js     validateActivity() takes the adjustment snapshot. SEED_MEMBERS.
+src/store*.js    Facade + Firestore + JSON backends, identical async API.
+public/app.js    State machine mirroring the prototype's renderVals(); templates per screen.
+public/styles.css  Modernist tokens + the component classes transcribed from the design.
+smoke-test.mjs   Logic checks + full browser walk-through at 402×874.
 ```
 
 ## Decisions worth knowing
 
-**Stats are computed server-side, per request.** The family produces a few
-hundred runs a year; recomputing is microseconds and means the browser never
-holds stale derived numbers. If it ever gets slow, cache in memory keyed on the
-latest `updatedAt` — do not move the maths to the browser.
+**Faithful to the design, adapted in two places.** (1) The handoff proposed
+magic-link login for adults via Supabase Auth; we have no Supabase, so everyone
+uses the name tile + family code that the login screen shows anyway. Admin is
+`isAdmin` on the member (Andreas). (2) New members are added by an admin via
+`POST /api/members`; the invite link is on the roadmap.
 
-**Best 5k/10k/half/marathon** = the fastest *pace* among runs at least that
-long and at most 1.2× it (`RACE_TOLERANCE`). Pace rather than raw time, or a
-10.0 km run always beats a faster 10.5 km one. Untimed runs never count for
-pace or bests, only for distance.
+**`adjustmentAtLog` is sacred.** Points are computed from the snapshot on each
+activity, never from the member's current adjustment. The Justering screen
+promises this in copy; the smoke test asserts it.
 
-**Week streak** counts ISO weeks back from the current week, and the current
-week counts as alive even with no run yet — otherwise every streak "breaks" on
-Monday morning.
+**Stats are computed server-side, per request** (`computeAll`). A family logs
+hundreds of runs a year; it is microseconds. `/api/state` returns all four
+periods at once so the period switch is instant and offline-safe. Do not move
+the maths to the browser.
 
-**Colours follow the person.** `colorSlot` is assigned at creation to the
-lowest free slot and never changes, so adding or removing a runner never
-recolours anyone else. The eight slots are the dataviz skill's validated
-categorical palette (checked with its validator; slots 3–5 are low-contrast on
-white, which is why the charts always carry a legend and a table view).
+**Weeks are ISO weeks in Europe/Copenhagen.** `process.env.TZ` is set at the
+top of `server.js` and in the Dockerfile so Cloud Run (UTC) rolls the week over
+at Danish midnight. Medals count only *closed* weeks; the recap shows last week,
+falling back to the running week when last week was empty.
 
-**Password check is constant-time** (`crypto.timingSafeEqual`). A missing
-`EDIT_PASSWORD` in production disables editing rather than falling back to a
-default — the local default `run` exists only when not on Cloud Run.
+**Nudges are events, not state.** Created on save by diffing this week's
+standings before/after; HALER IND fires only on the run that crosses the
+5-point line, otherwise it would repeat on every run. Each member has their own
+dismissed list; `about` prevents you being nudged about yourself; `pref` maps to
+the three toggles. Anything older than 14 days is hidden.
 
-**Deleting a runner deletes their runs** (Firestore batch). Orphaned runs would
-break every per-member stat; the UI says so before confirming.
+**The board is live.** Every tab change and tab-visibility change refetches
+`/api/state`, so a run logged on another phone shows up without a reload.
 
-**Future imports are already in the schema.** Every run has `source`
-(`manual` | `strava` | `apple_health`) and `externalId`. `members.integrations`
-holds per-runner connection state and is never sent to the browser (see
-`publicMember()`); only booleans are. When Strava arrives: OAuth connect per
-runner, webhook → fetch activity → `validateRun` with `source: 'strava'`,
-upsert on `externalId`.
+**Design fidelity rules.** Zero radius, 2px ink rules, hairline dividers, flush
+left everything, tabular numerals, Danish decimal comma (`n()` in app.js),
+accent red only where the design has it, body-size red text uses
+`--color-accent-700`. Archivo is vendored from `@fontsource/archivo`.
 
 ## Deployment
 
 Same WIF pattern as the speaker portal, own provider
 (`github/providers/family-running-stats`, pinned to `Njilski/family-running-stats`),
 same deployer service account. The workflow passes `--allow-unauthenticated`
-(public read is the point) and no env flags, so secrets attached to the service
-survive deploys. Secrets: `running-edit-password`, `running-session-secret` in
-Secret Manager. The one-time commands are in README → Deploying.
+(the app itself gates on the family code) and no env flags, so secrets attached
+to the service survive deploys. Secrets: `running-family-pin`,
+`running-session-secret`. One-time commands: README → Deploying.
 
 ## Conventions
 
-Comments explain *why*, not what, and are rare. UI prose is plain and says what
-to do next. Colours come from `styles.css` tokens; chart colours only from the
-`--series-N` slots.
+Comments explain *why*, not what, and are rare. UI copy is Danish, plain, a bit
+cheeky, and says what to do next. Colours only from the tokens in `styles.css`.
 
 ## Security constraints that are not negotiable
 
-- Never handle tokens, secrets or the family password directly. Anything that
+- Never handle the family code, tokens or secrets directly. Anything that
   prompts for a credential is for Andreas to type.
-- Every write goes through `requireEdit`. A read endpoint must never leak
-  `integrations` or anything under it.
+- Every write is scoped to `req.member`; a member logs runs only for
+  themselves and edits only their own adjustment unless `isAdmin`.
+- `integrations` on a member never reaches the browser (`publicMember()`).
 
 ## Status
 
-- [ ] GitHub repo `Njilski/family-running-stats` created, token granted access
-- [ ] First push to `main`
+- [x] App built to the design, smoke test green, pushed to GitHub
 - [ ] WIF provider + IAM binding (README step 1–2)
 - [ ] Secrets created and attached (README step 3 + attach block)
-- [ ] First live deploy verified, family added, first run logged
-- [ ] Strava integration
-- [ ] Apple Health import via Shortcut
+- [ ] First live deploy verified; family logs the first run
+- [ ] Invite link for new members
+- [ ] Push notifications / Sunday e-mail
+- [ ] Strava, Apple Health imports

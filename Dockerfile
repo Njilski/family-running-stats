@@ -1,8 +1,8 @@
-# Family Running Stats — Cloud Run image
+# Familiens Løbeklub — Cloud Run image
 FROM node:22-slim
 
 WORKDIR /app
-ENV NODE_ENV=production
+ENV NODE_ENV=production TZ=Europe/Copenhagen
 
 COPY package*.json ./
 RUN npm ci --omit=dev

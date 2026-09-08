@@ -1,7 +1,7 @@
 {
-  "name": "family-running-stats",
+  "name": "familiens-loebeklub",
   "version": "0.1.0",
-  "description": "Family running log and stats — anyone can look, the family password unlocks editing",
+  "description": "Familiens L\u00f8beklub \u2014 family running scoreboard on age-adjusted kilometres",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -12,8 +12,8 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@fontsource/archivo": "^5.3.0",
     "@google-cloud/firestore": "^9.0.0",
-    "bootstrap": "^5.3.3",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.4.2",
     "express": "^4.22.2"

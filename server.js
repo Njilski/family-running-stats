@@ -1,9 +1,15 @@
-// Family Running Stats
+// Familiens Løbeklub — family running scoreboard
 //
-// Anyone with the link can read everything. Editing (members, runs) needs the
-// family password, which sets a signed cookie — the same tiny session scheme as
-// the speaker portal, minus per-user accounts. There is one password because
-// there is one family; per-person identity is a field on the run, not a login.
+// One family, one 4-digit code. A member picks their name tile and types the
+// family code once; that sets a long-lived signed cookie naming the member.
+// Everything after that is scoped to that member: they log runs only for
+// themselves, adjust only their own age adjustment unless they are admin.
+//
+// Points = km × the member's adjustment *at the time of logging*. That snapshot
+// lives on the activity and is never recomputed.
+
+// The family lives in Copenhagen; weeks and "today" must roll over there, not in UTC.
+process.env.TZ ||= 'Europe/Copenhagen';
 
 import 'dotenv/config';
 import crypto from 'node:crypto';
@@ -12,26 +18,27 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import * as store from './src/store.js';
-import { computeStats } from './src/stats.js';
-import { newId, newMember, slugify, validateRun } from './src/model.js';
+import { computeAll, PERIODS, periodRanges } from './src/stats.js';
+import { validateActivity, clampAdjustment, newMember, newId } from './src/model.js';
+import { nudgesForSave, nudgesFor } from './src/nudges.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.set('trust proxy', 1); // Cloud Run terminates TLS in front of the app
 const IS_PROD = process.env.NODE_ENV === 'production' || Boolean(process.env.K_SERVICE);
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '256kb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Vendored frontend assets (served from node_modules — no CDN dependency)
-app.use('/vendor/bootstrap', express.static(path.join(__dirname, 'node_modules/bootstrap/dist')));
+// Archivo, vendored from node_modules — no runtime dependency on Google Fonts.
+app.use('/vendor/archivo', express.static(path.join(__dirname, 'node_modules/@fontsource/archivo')));
 
 const SECRET = process.env.SESSION_SECRET || 'dev-secret-change-me';
-// Locally the password defaults so the app is usable straight after npm start.
-// In production a missing password disables editing rather than opening it up.
-const EDIT_PASSWORD = process.env.EDIT_PASSWORD || (IS_PROD ? null : 'run');
+// Locally the family code defaults so the app works straight after npm start.
+// In production a missing code means nobody can log in — never an open door.
+const FAMILY_PIN = process.env.FAMILY_PIN || (IS_PROD ? null : '1234');
+const FAMILY_NAME = process.env.FAMILY_NAME || 'FAMILIENS LØBEKLUB';
 
-// --- Signed-cookie edit session ---------------------------------------------------
+// --- Signed-cookie member session ----------------------------------------------------
 
 function sign(value) {
   const mac = crypto.createHmac('sha256', SECRET).update(value).digest('base64url');
@@ -48,100 +55,182 @@ const cookieOpts = {
   httpOnly: true,
   secure: IS_PROD,
   sameSite: 'lax',
-  maxAge: 30 * 24 * 3600 * 1000, // a family app on a phone: stay unlocked for a month
+  maxAge: 365 * 24 * 3600 * 1000, // "tast koden én gang" — a shared family iPad stays signed in
 };
-function canEdit(req) {
-  return unsign(req.cookies.running_edit) === 'edit';
-}
-function requireEdit(req, res, next) {
-  if (!canEdit(req)) return res.status(401).json({ error: 'Unlock editing with the family password first.' });
+
+async function requireMember(req, res, next) {
+  const id = unsign(req.cookies.lk_member);
+  const member = id ? await store.getMember(id) : null;
+  if (!member) return res.status(401).json({ error: 'Log ind først.' });
+  req.member = member;
   next();
 }
 
-// Constant-time compare so the password can't be guessed a character at a time.
-function passwordMatches(given) {
-  if (!EDIT_PASSWORD) return false;
+function pinMatches(given) {
+  if (!FAMILY_PIN) return false;
   const a = Buffer.from(String(given));
-  const b = Buffer.from(EDIT_PASSWORD);
+  const b = Buffer.from(FAMILY_PIN);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-// --- Public read -------------------------------------------------------------------
+// --- Login ------------------------------------------------------------------------------------
 
-app.get('/api/summary', async (req, res) => {
-  const [members, runs] = await Promise.all([store.listMembers(), store.listRuns()]);
+// The login screen needs the tiles before anyone is signed in.
+app.get('/api/family', async (req, res) => {
+  const members = await store.listMembers();
   res.json({
-    members: members.map(publicMember),
-    runs,
-    stats: computeStats(members, runs),
-    canEdit: canEdit(req),
-    editingEnabled: Boolean(EDIT_PASSWORD),
+    name: FAMILY_NAME,
+    founded: members.reduce((y, m) => Math.min(y, Number(m.createdAt.slice(0, 4))), new Date().getFullYear()),
+    loginEnabled: Boolean(FAMILY_PIN),
+    members: members.map(loginTile),
   });
 });
 
-app.get('/api/export.csv', async (req, res) => {
-  const [members, runs] = await Promise.all([store.listMembers(), store.listRuns()]);
-  const name = new Map(members.map((m) => [m.id, m.name]));
-  const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const lines = [
-    'date,runner,distance_km,duration_sec,notes,source',
-    ...runs.map((r) => [r.date, name.get(r.memberId), r.distanceKm, r.durationSec, r.notes, r.source].map(esc).join(',')),
-  ];
-  res.type('text/csv').attachment('family-runs.csv').send(lines.join('\n'));
+app.post('/api/login', async (req, res) => {
+  if (!FAMILY_PIN) return res.status(503).json({ error: 'Familiekoden er ikke sat op på serveren.' });
+  const member = await store.getMember(String(req.body?.memberId || ''));
+  if (!member) return res.status(404).json({ error: 'Vælg hvem der løber.' });
+  if (!pinMatches(req.body?.pin || '')) return res.status(401).json({ error: 'Det er ikke familiens kode.' });
+  res.cookie('lk_member', sign(member.id), cookieOpts);
+  res.json({ ok: true, memberId: member.id });
 });
 
-// --- Unlock / lock -------------------------------------------------------------------
-
-app.post('/api/unlock', (req, res) => {
-  if (!EDIT_PASSWORD) return res.status(503).json({ error: 'Editing is not configured on this server.' });
-  if (!passwordMatches(req.body?.password || '')) {
-    return res.status(401).json({ error: 'That is not the family password.' });
-  }
-  res.cookie('running_edit', sign('edit'), cookieOpts);
+app.post('/api/logout', (req, res) => {
+  res.clearCookie('lk_member');
   res.json({ ok: true });
 });
 
-app.post('/api/lock', (req, res) => {
-  res.clearCookie('running_edit');
-  res.json({ ok: true });
+// --- Everything the app shows, in one call -----------------------------------------------------
+
+app.get('/api/state', requireMember, async (req, res) => {
+  res.json(await buildState(req.member));
 });
 
-// --- Members -----------------------------------------------------------------------------
+async function buildState(member) {
+  const now = new Date();
+  const [members, activities, allNudges] = await Promise.all([store.listMembers(), store.listActivities(), store.listNudges()]);
+  const stats = computeAll(members, activities, now);
+  return {
+    family: FAMILY_NAME,
+    me: publicMember(member),
+    members: members.map(publicMember),
+    stats,
+    activities: activities.slice(0, 200),
+    nudges: nudgesFor(member, allNudges, now),
+    prefs: member.prefs,
+  };
+}
 
-app.post('/api/members', requireEdit, async (req, res) => {
-  const name = String(req.body?.name || '').trim().slice(0, 60);
-  if (!name) return res.status(400).json({ error: 'Give the runner a name.' });
+// --- Log a run (the only write path for activities) -------------------------------------------
+
+app.post('/api/activities', requireMember, async (req, res) => {
+  const now = new Date();
   const members = await store.listMembers();
-  if (members.some((m) => m.name.toLowerCase() === name.toLowerCase())) {
-    return res.status(409).json({ error: `${name} is already on the list.` });
-  }
-  let id = slugify(name);
-  if (members.some((m) => m.id === id)) id = `${id}-${newId()}`;
-  // The colour slot is assigned once and never reused while the member exists,
-  // so a person keeps their colour when someone else is added or removed.
-  const used = new Set(members.map((m) => m.colorSlot));
-  let slot = 0;
-  while (used.has(slot)) slot += 1;
-  const member = await store.saveMember(newMember({ id, name }, slot));
-  res.json(publicMember(member));
+  const actor = members.find((m) => m.id === req.member.id);
+  const { activity, error } = validateActivity(req.body, actor, localDate(now));
+  if (error) return res.status(400).json({ error });
+
+  const before = await store.listActivities();
+  const [wFrom, wTo] = periodRanges(now).week;
+  const weekBefore = computeAll(members, before, now).periods.week;
+  await store.saveActivity(activity);
+  const after = [activity, ...before];
+  const weekAfter = computeAll(members, after, now).periods.week;
+
+  // Beskeder are born here — the moment a run lands on the board.
+  const nudges = nudgesForSave({
+    members, actor, activity, now,
+    before: weekBefore,
+    after: { ...weekAfter, activities: after.filter((a) => a.date >= wFrom && a.date <= wTo) },
+  });
+  await store.saveNudges(nudges);
+
+  res.json({ ok: true, activity, state: await buildState(actor) });
 });
 
-app.put('/api/members/:id', requireEdit, async (req, res) => {
-  const member = await store.getMember(req.params.id);
-  if (!member) return res.status(404).json({ error: 'Not found' });
-  const name = String(req.body?.name || '').trim().slice(0, 60);
-  if (!name) return res.status(400).json({ error: 'Give the runner a name.' });
-  member.name = name;
+// Fixing a typo on your own run within the day it was logged. Adults (admins)
+// can fix anyone's. Points are recomputed from the *stored* snapshot.
+app.delete('/api/activities/:id', requireMember, async (req, res) => {
+  const a = await store.getActivity(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Turen findes ikke.' });
+  if (a.memberId !== req.member.id && !req.member.isAdmin) {
+    return res.status(403).json({ error: 'Du kan kun slette dine egne ture.' });
+  }
+  await store.deleteActivity(a.id);
+  res.json({ ok: true, state: await buildState(req.member) });
+});
+
+// --- Adjustments --------------------------------------------------------------------------------
+
+app.put('/api/members/:id/adjustment', requireMember, async (req, res) => {
+  const target = await store.getMember(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Not found' });
+  if (target.id !== req.member.id && !req.member.isAdmin) {
+    return res.status(403).json({ error: 'Kun din egen — spørg en admin.' });
+  }
+  const value = clampAdjustment(req.body?.adjustment);
+  if (value === null) return res.status(400).json({ error: 'Justeringen skal være et tal mellem 1,00 og 3,00.' });
+  target.adjustment = value;
+  await store.saveMember(target);
+  res.json({ ok: true, member: publicMember(target) });
+});
+
+// --- Preferences and nudges ----------------------------------------------------------------------
+
+app.put('/api/me/prefs', requireMember, async (req, res) => {
+  const p = req.body || {};
+  req.member.prefs = {
+    overtaken: p.overtaken !== undefined ? Boolean(p.overtaken) : req.member.prefs.overtaken,
+    sunday: p.sunday !== undefined ? Boolean(p.sunday) : req.member.prefs.sunday,
+    everyRun: p.everyRun !== undefined ? Boolean(p.everyRun) : req.member.prefs.everyRun,
+  };
+  await store.saveMember(req.member);
+  res.json({ ok: true, prefs: req.member.prefs });
+});
+
+app.post('/api/nudges/:id/dismiss', requireMember, async (req, res) => {
+  const list = new Set(req.member.dismissedNudges || []);
+  list.add(String(req.params.id));
+  // Keep the list bounded; nudges older than two weeks are never shown anyway.
+  req.member.dismissedNudges = [...list].slice(-200);
+  await store.saveMember(req.member);
+  res.json({ ok: true });
+});
+
+// --- Admin: members ---------------------------------------------------------------------------------
+//
+// The design onboards new members via an invite link. Until that exists, an
+// admin adds them here (name, tag like "8 år", initials, suggested adjustment).
+
+function requireAdmin(req, res, next) {
+  if (!req.member.isAdmin) return res.status(403).json({ error: 'Kun for admin.' });
+  next();
+}
+
+app.post('/api/members', requireMember, requireAdmin, async (req, res) => {
+  const { name, tag, initials, suggestion } = req.body || {};
+  if (!name?.trim()) return res.status(400).json({ error: 'Navn mangler.' });
+  const members = await store.listMembers();
+  let id = String(name).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '') || newId();
+  if (members.some((m) => m.id === id)) id = `${id}-${newId()}`;
+  const s = clampAdjustment(suggestion ?? 1) ?? 1;
+  const member = newMember({
+    id, name: name.trim(), tag: String(tag || '').trim(), initials: String(initials || name).slice(0, 2).toUpperCase(),
+    ageHint: String(tag || '').trim(), suggestion: s, isAdmin: false,
+  });
   await store.saveMember(member);
   res.json(publicMember(member));
 });
 
-app.delete('/api/members/:id', requireEdit, async (req, res) => {
-  const member = await store.getMember(req.params.id);
-  if (!member) return res.status(404).json({ error: 'Not found' });
-  await store.deleteMember(member.id);
+app.delete('/api/members/:id', requireMember, requireAdmin, async (req, res) => {
+  if (req.params.id === req.member.id) return res.status(400).json({ error: 'Du kan ikke slette dig selv.' });
+  const target = await store.getMember(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Not found' });
+  await store.deleteMember(target.id);
   res.json({ ok: true });
 });
+
+// --- helpers ---------------------------------------------------------------------------------------
 
 // Integration tokens never leave the server; the browser only learns whether
 // something is connected.
@@ -149,51 +238,35 @@ function publicMember(m) {
   return {
     id: m.id,
     name: m.name,
-    colorSlot: m.colorSlot,
-    createdAt: m.createdAt,
-    connected: {
-      strava: Boolean(m.integrations?.strava),
-      appleHealth: Boolean(m.integrations?.appleHealth),
-    },
+    tag: m.tag,
+    initials: m.initials,
+    ageHint: m.ageHint,
+    suggestion: m.suggestion,
+    adjustment: m.adjustment,
+    isAdmin: Boolean(m.isAdmin),
+    connected: { strava: Boolean(m.integrations?.strava), appleHealth: Boolean(m.integrations?.appleHealth) },
   };
 }
+function loginTile(m) {
+  return { id: m.id, name: m.name, tag: m.tag, initials: m.initials };
+}
+function localDate(d) {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
 
-// --- Runs ----------------------------------------------------------------------------------
-
-app.post('/api/runs', requireEdit, async (req, res) => {
-  const { run, error } = validateRun(req.body, await store.listMembers());
-  if (error) return res.status(400).json({ error });
-  res.json(await store.saveRun(run));
-});
-
-app.put('/api/runs/:id', requireEdit, async (req, res) => {
-  const existing = await store.getRun(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Not found' });
-  const { run, error } = validateRun(req.body, await store.listMembers(), existing);
-  if (error) return res.status(400).json({ error });
-  res.json(await store.saveRun(run));
-});
-
-app.delete('/api/runs/:id', requireEdit, async (req, res) => {
-  const existing = await store.getRun(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Not found' });
-  await store.deleteRun(existing.id);
-  res.json({ ok: true });
-});
-
-// API errors stay JSON so the page can show them.
 app.use((err, req, res, next) => {
   if (res.headersSent) return next(err);
   if (!req.path.startsWith('/api/')) return next(err);
   console.error(`${req.method} ${req.path} failed:`, err.message);
-  res.status(err.status || 500).json({ error: 'Something went wrong. Please try again.' });
+  res.status(err.status || 500).json({ error: 'Noget gik galt. Prøv igen.' });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`\n  Family Running Stats → http://localhost:${PORT}`);
+  console.log(`\n  Familiens Løbeklub → http://localhost:${PORT}`);
   console.log(
-    `  storage: ${store.storageBackend} · editing: ${EDIT_PASSWORD ? 'enabled' : 'DISABLED (no EDIT_PASSWORD)'}` +
-      `${!IS_PROD && !process.env.EDIT_PASSWORD ? ' · local password is "run"' : ''}\n`
+    `  storage: ${store.storageBackend} · login: ${FAMILY_PIN ? 'enabled' : 'DISABLED (no FAMILY_PIN)'}` +
+      `${!IS_PROD && !process.env.FAMILY_PIN ? ' · local family code is 1234' : ''}\n`
   );
 });
