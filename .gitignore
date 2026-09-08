@@ -2,7 +2,7 @@ node_modules/
 .env
 data/
 *.zip
-*.tgz
-*.png
 # app icons are committed on purpose
 !public/icon-*.png
+*.png
+*.tgz

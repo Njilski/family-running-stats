@@ -217,6 +217,7 @@ app.post('/api/members', requireMember, requireAdmin, async (req, res) => {
   const member = newMember({
     id, name: name.trim(), tag: String(tag || '').trim(), initials: String(initials || name).slice(0, 2).toUpperCase(),
     ageHint: String(tag || '').trim(), suggestion: s, isAdmin: false,
+    sortOrder: Math.max(0, ...members.map((m) => m.sortOrder ?? 0)) + 1,
   });
   await store.saveMember(member);
   res.json(publicMember(member));

@@ -13,11 +13,18 @@ const nudges = db.collection('running_nudges');
 export async function listMembers() {
   const snap = await members.get();
   if (snap.empty) {
-    const seeded = SEED_MEMBERS.map(newMember);
+    const seeded = SEED_MEMBERS.map((m, i) => newMember(m, i));
     await Promise.all(seeded.map((m) => members.doc(m.id).set(m)));
     return seeded;
   }
-  return snap.docs.map((d) => d.data()).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const list = snap.docs.map((d) => d.data());
+  // Members seeded before sortOrder existed: backfill once from the seed order.
+  const fixes = list.filter((m) => m.sortOrder === undefined);
+  if (fixes.length) {
+    fixes.forEach((m) => { m.sortOrder = Math.max(0, SEED_MEMBERS.findIndex((s) => s.id === m.id)); });
+    await Promise.all(fixes.map((m) => members.doc(m.id).set(m)));
+  }
+  return list.sort(byOrder);
 }
 
 export async function getMember(id) {
@@ -72,4 +79,8 @@ export async function saveNudges(list) {
 
 function byDateDesc(a, b) {
   return a.date === b.date ? b.createdAt.localeCompare(a.createdAt) : b.date.localeCompare(a.date);
+}
+
+function byOrder(a, b) {
+  return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.createdAt.localeCompare(b.createdAt);
 }

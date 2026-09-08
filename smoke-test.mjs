@@ -21,7 +21,7 @@ const ok = (cond, msg) => { if (!cond) throw new Error('FAILED: ' + msg); consol
 // --- 0. Pure logic ----------------------------------------------------------------------
 {
   const now = new Date('2026-09-08T12:00:00'); // Tuesday, ISO week 37
-  const members = SEED_MEMBERS.map(newMember);
+  const members = SEED_MEMBERS.map((m, i) => newMember(m, i));
   const byId = Object.fromEntries(members.map((m) => [m.id, m]));
   let t = 0;
   const act = (id, date, km, minutes) => {
@@ -86,7 +86,7 @@ page.on('console', (m) => { if (m.type() === 'error' && !/status of 4\d\d/.test(
 const anon = await ctx.request.get(`${BASE}/api/state`);
 ok(anon.status() === 401, 'state requires login');
 const fam = await (await ctx.request.get(`${BASE}/api/family`)).json();
-ok(fam.members.length === 5 && !('adjustment' in fam.members[0]), 'family tiles are public and minimal');
+ok(fam.members.length === 5 && !('adjustment' in fam.members[0]) && fam.members[0].id === 'andreas' && fam.members[4].id === 'aksel', 'family tiles are public, minimal and in seed order');
 const bad = await ctx.request.post(`${BASE}/api/login`, { data: { memberId: 'maja', pin: '0000' } });
 ok(bad.status() === 401, 'wrong family code refused');
 

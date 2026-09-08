@@ -27,10 +27,10 @@ db.nudges ||= [];
 
 export async function listMembers() {
   if (db.members.length === 0) {
-    db.members = SEED_MEMBERS.map(newMember);
+    db.members = SEED_MEMBERS.map((m, i) => newMember(m, i));
     save();
   }
-  return [...db.members].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return [...db.members].sort(byOrder);
 }
 
 export async function getMember(id) {
@@ -88,4 +88,8 @@ export async function saveNudges(list) {
 
 function byDateDesc(a, b) {
   return a.date === b.date ? b.createdAt.localeCompare(a.createdAt) : b.date.localeCompare(a.date);
+}
+
+function byOrder(a, b) {
+  return (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.createdAt.localeCompare(b.createdAt);
 }

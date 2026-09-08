@@ -25,7 +25,7 @@ export function newId() {
   return crypto.randomBytes(6).toString('base64url');
 }
 
-export function newMember(seed) {
+export function newMember(seed, index) {
   return {
     id: seed.id,
     name: seed.name,
@@ -35,6 +35,8 @@ export function newMember(seed) {
     suggestion: seed.suggestion,
     adjustment: seed.adjustment ?? seed.suggestion,
     isAdmin: Boolean(seed.isAdmin),
+    // Display order on the login tiles and chips; new members go last.
+    sortOrder: seed.sortOrder ?? index ?? 0,
     prefs: { overtaken: true, sunday: true, everyRun: false },
     dismissedNudges: [],
     integrations: { strava: null, appleHealth: null },
