@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Family Running Stats</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏃</text></svg>">
+  <link href="/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/styles.css" rel="stylesheet">
+</head>
+<body>
+  <div id="noEditBanner" class="lock-banner d-none">Editing is switched off on this server — set <code>EDIT_PASSWORD</code> to enable it.</div>
+
+  <nav class="portal-nav">
+    <div class="container d-flex align-items-center justify-content-between py-2">
+      <a class="brand" href="/">🏃 Family <span class="accent">Running</span> Stats</a>
+      <div class="d-flex align-items-center gap-2">
+        <a class="btn btn-outline-light btn-sm" href="/api/export.csv">Export CSV</a>
+        <button class="btn btn-outline-light btn-sm" id="unlockBtn">Unlock editing</button>
+        <button class="btn btn-outline-light btn-sm d-none" id="lockBtn">Lock</button>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container py-4">
+    <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+      <div>
+        <h2 class="mb-0">The family, this year</h2>
+        <span class="text-muted" id="asOf"></span>
+      </div>
+      <div class="d-flex gap-2 edit-only d-none">
+        <button class="btn btn-outline-secondary" id="membersBtn">Runners</button>
+        <button class="btn btn-primary" id="addRunBtn">+ Log a run</button>
+      </div>
+    </div>
+
+    <div id="emptyState" class="card d-none"><div class="card-body empty">
+      <p class="mb-2 fs-5">No runs logged yet.</p>
+      <p class="mb-0">Unlock editing, add the runners, then log the first run.</p>
+    </div></div>
+
+    <div id="content">
+      <div class="row g-3 mb-4">
+        <div class="col-6 col-md-3"><div class="card stat-card"><div class="card-body">
+          <div class="stat-value" id="statKmYear">—</div>
+          <div class="stat-label">km this year</div>
+          <div class="stat-sub" id="statKmMonth"></div>
+        </div></div></div>
+        <div class="col-6 col-md-3"><div class="card stat-card"><div class="card-body">
+          <div class="stat-value" id="statRunsYear">—</div>
+          <div class="stat-label">runs this year</div>
+          <div class="stat-sub" id="statRunsMonth"></div>
+        </div></div></div>
+        <div class="col-6 col-md-3"><div class="card stat-card"><div class="card-body">
+          <div class="stat-value" id="statTimeYear">—</div>
+          <div class="stat-label">hours on the road</div>
+          <div class="stat-sub" id="statPaceYear"></div>
+        </div></div></div>
+        <div class="col-6 col-md-3"><div class="card stat-card"><div class="card-body">
+          <div class="stat-value" id="statKmAll">—</div>
+          <div class="stat-label">km all time</div>
+          <div class="stat-sub" id="statRunsAll"></div>
+        </div></div></div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-lg-7">
+          <div class="card h-100"><div class="card-body">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h3 class="mb-0">Kilometres per month</h3>
+              <button class="btn btn-link btn-sm p-0" id="monthlyTableToggle">Show table</button>
+            </div>
+            <div class="chart-legend mb-2" id="monthlyLegend"></div>
+            <div class="chart-wrap" id="monthlyChart"></div>
+            <div class="table-responsive d-none" id="monthlyTable"></div>
+          </div></div>
+        </div>
+        <div class="col-lg-5">
+          <div class="card h-100"><div class="card-body">
+            <h3 class="mb-2">Year to date</h3>
+            <div class="chart-legend mb-2" id="cumLegend"></div>
+            <div class="chart-wrap" id="cumChart"></div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-lg-7">
+          <div class="card"><div class="card-body">
+            <h3 class="mb-3">Runners</h3>
+            <div class="table-responsive">
+              <table class="table align-middle mb-0">
+                <thead><tr><th>Runner</th><th class="num">km this year</th><th class="num">Runs</th><th class="num">Avg pace</th><th class="num">Longest</th><th class="num">Week streak</th></tr></thead>
+                <tbody id="memberRows"></tbody>
+              </table>
+            </div>
+          </div></div>
+        </div>
+        <div class="col-lg-5">
+          <div class="card"><div class="card-body">
+            <h3 class="mb-2">Family records</h3>
+            <div id="records"></div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="card"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+          <h3 class="mb-0">Run log</h3>
+          <select class="form-select form-select-sm w-auto" id="logFilter"><option value="">Everyone</option></select>
+        </div>
+        <div class="table-responsive">
+          <table class="table align-middle mb-0">
+            <thead><tr><th>Date</th><th>Runner</th><th class="num">km</th><th class="num">Time</th><th class="num">Pace</th><th>Notes</th><th></th></tr></thead>
+            <tbody id="runRows"></tbody>
+          </table>
+        </div>
+        <div class="text-center mt-2 d-none" id="moreWrap"><button class="btn btn-link btn-sm" id="moreBtn">Show all</button></div>
+      </div></div>
+    </div>
+  </main>
+
+  <!-- Unlock -->
+  <div class="modal fade" id="unlockModal" tabindex="-1"><div class="modal-dialog modal-sm"><div class="modal-content">
+    <form id="unlockForm">
+      <div class="modal-header"><h5 class="modal-title">Family password</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="password" class="form-control" id="password" autocomplete="current-password" placeholder="Password" required>
+        <div class="text-danger small mt-2 d-none" id="unlockError"></div>
+      </div>
+      <div class="modal-footer"><button type="submit" class="btn btn-primary w-100">Unlock</button></div>
+    </form>
+  </div></div></div>
+
+  <!-- Add / edit run -->
+  <div class="modal fade" id="runModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+    <form id="runForm">
+      <div class="modal-header"><h5 class="modal-title" id="runModalTitle">Log a run</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="runId">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label" for="runMember">Who</label>
+            <select class="form-select" id="runMember" required></select>
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="runDate">Date</label>
+            <input type="date" class="form-control" id="runDate" required>
+          </div>
+          <div class="col-6">
+            <label class="form-label" for="runKm">Distance (km)</label>
+            <input type="number" class="form-control" id="runKm" step="0.01" min="0.01" inputmode="decimal" required>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Time <span class="text-muted">(optional)</span></label>
+            <div class="input-group">
+              <input type="number" class="form-control" id="runH" min="0" placeholder="h" inputmode="numeric">
+              <span class="input-group-text">:</span>
+              <input type="number" class="form-control" id="runM" min="0" max="59" placeholder="mm" inputmode="numeric">
+              <span class="input-group-text">:</span>
+              <input type="number" class="form-control" id="runS" min="0" max="59" placeholder="ss" inputmode="numeric">
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="runNotes">Notes <span class="text-muted">(optional)</span></label>
+            <input type="text" class="form-control" id="runNotes" maxlength="500" placeholder="Route, weather, how it felt…">
+          </div>
+        </div>
+        <div class="text-danger small mt-3 d-none" id="runError"></div>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <button type="button" class="btn btn-outline-danger d-none" id="runDeleteBtn">Delete</button>
+        <button type="submit" class="btn btn-primary">Save run</button>
+      </div>
+    </form>
+  </div></div></div>
+
+  <!-- Members -->
+  <div class="modal fade" id="membersModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title">Runners</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <ul class="list-group mb-3" id="memberList"></ul>
+      <form class="d-flex gap-2" id="memberForm">
+        <input type="text" class="form-control" id="memberName" placeholder="Name" maxlength="60" required>
+        <button type="submit" class="btn btn-primary text-nowrap">Add runner</button>
+      </form>
+      <div class="text-danger small mt-2 d-none" id="memberError"></div>
+      <p class="text-muted small mt-3 mb-0">Removing a runner also removes all their runs.</p>
+    </div>
+  </div></div></div>
+
+  <script src="/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script src="/charts.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

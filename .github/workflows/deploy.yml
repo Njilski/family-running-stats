@@ -1,0 +1,62 @@
+# Deploys main to Cloud Run on every push.
+#
+# Authentication is Workload Identity Federation: GitHub hands Google a signed
+# OIDC token for this repo and Google exchanges it for short-lived credentials.
+# No service-account key is stored in the repo or in GitHub secrets. The
+# provider below is pinned to Njilski/family-running-stats — see README for the
+# one-time setup that created it.
+#
+# Secrets already attached to the service (EDIT_PASSWORD, SESSION_SECRET) are
+# left alone — this deploy passes no env flags, so Cloud Run keeps them.
+
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: # documentation changes nothing that runs
+      - '**/*.md'
+      - 'LICENSE'
+  workflow_dispatch: # re-run a deploy by hand from the Actions tab
+
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write # required to mint the OIDC token
+
+env:
+  PROJECT_ID: athenas-1537948714332
+  REGION: europe-west1
+  SERVICE: family-running-stats
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/731133621844/locations/global/workloadIdentityPools/github/providers/family-running-stats
+          service_account: portal-deployer@athenas-1537948714332.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --source . \
+            --region "$REGION" \
+            --project "$PROJECT_ID" \
+            --allow-unauthenticated \
+            --quiet
+
+      - name: Report the live revision
+        run: |
+          gcloud run services describe "$SERVICE" \
+            --region "$REGION" --project "$PROJECT_ID" \
+            --format='value(status.latestReadyRevisionName,status.url)'

@@ -1,0 +1,24 @@
+{
+  "name": "family-running-stats",
+  "version": "0.1.0",
+  "description": "Family running log and stats — anyone can look, the family password unlocks editing",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "smoke": "node smoke-test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^9.0.0",
+    "bootstrap": "^5.3.3",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.4.2",
+    "express": "^4.22.2"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}
