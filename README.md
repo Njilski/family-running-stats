@@ -10,6 +10,8 @@ Built on the same stack as the Opus speaker portal so both are maintained the
 same way: Node/Express, Firestore (JSON file locally), Cloud Run, automatic
 deploys from GitHub via Workload Identity Federation.
 
+Live at https://family-running-stats-731133621844.europe-west1.run.app (log in with the family code).
+
 ## Quick start
 
 ```bash
@@ -91,7 +93,7 @@ Project `athenas-1537948714332`, region `europe-west1`, service
 `family-running-stats`. Firestore collections `running_members`,
 `running_activities`, `running_nudges` (prefixed: the project is shared).
 
-### One-time setup (status in CLAUDE.md)
+### One-time setup (done — kept for reference and for a second family)
 
 Run in Cloud Shell. The pool `github` and the deployer `portal-deployer` exist
 from the speaker portal; this adds a provider pinned to this repo.

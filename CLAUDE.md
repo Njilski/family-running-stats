@@ -102,9 +102,10 @@ cheeky, and says what to do next. Colours only from the tokens in `styles.css`.
 ## Status
 
 - [x] App built to the design, smoke test green, pushed to GitHub
-- [ ] WIF provider + IAM binding (README step 1–2)
-- [ ] Secrets created and attached (README step 3 + attach block)
-- [ ] First live deploy verified; family logs the first run
+- [x] WIF provider `family-running-stats` + IAM binding on `portal-deployer` (done 8 Sep 2026)
+- [x] Secrets `running-family-pin`, `running-session-secret` created and attached; runtime SA is the default compute SA
+- [x] Live: https://family-running-stats-731133621844.europe-west1.run.app — auto-deploys on push to main
+- [ ] Family logs the first real runs
 - [ ] Invite link for new members
 - [ ] Push notifications / Sunday e-mail
 - [ ] Strava, Apple Health imports
