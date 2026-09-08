@@ -422,9 +422,16 @@
 
   app.addEventListener('input', (e) => {
     if (e.target.id === 'pinInput') {
+      // Update the boxes in place: re-rendering the input mid-typing recreates it
+      // with the caret at the start, so the digits would come out reversed.
       st.pin = e.target.value.replace(/\D/g, '').slice(0, 4);
       st.error = '';
-      render();
+      e.target.value = st.pin;
+      app.querySelectorAll('.pin .box').forEach((box, i) => {
+        box.textContent = i < st.pin.length ? '•' : '';
+        box.classList.toggle('active', i === st.pin.length);
+      });
+      app.querySelector('.pin .err')?.remove();
       if (st.pin.length === 4) doLogin();
     }
     if (e.target.id === 'pickDate') st.pickDate = e.target.value;

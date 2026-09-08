@@ -98,7 +98,8 @@ await page.click('[data-pick="aksel"]');
 await page.fill('#pinInput', '9999');
 await page.waitForSelector('.err');
 ok((await page.textContent('.err')).includes('kode'), 'wrong code shows a message');
-await page.fill('#pinInput', PIN);
+// Type key by key, like a person: a re-render per keystroke once reversed the digits.
+await page.keyboard.type(PIN, { delay: 60 });
 await page.waitForSelector('.hero');
 ok((await page.textContent('.hero .name')).includes('Ingen'), 'empty board says so');
 ok((await page.textContent('.tabs .on')) === 'TAVLEN', 'lands on Tavlen');
