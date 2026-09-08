@@ -24,11 +24,11 @@ Du behøver **ikke** en «Modtag input»-handling. Appen sender nøglen som
 
 ## 1. Find løbeturene i Sundhed
 
-Søg **sundhed** → vælg **Find sundhedsprøver** (Find Health Samples).
+Søg **træning** → vælg **Find træninger** (Find Workouts). *Ikke* «Find
+sundhedsprøver» — træninger har deres egne handlinger i Genveje.
 
-Handlingen kommer ind som «Find *Alle sundhedsprøver* hvor …». Sæt den op sådan:
+Handlingen kommer ind som «Find *Alle træninger* hvor …». Sæt den op sådan:
 
-- Tryk på **Alle sundhedsprøver** → vælg **Træning** (Workout).
 - Tryk **Tilføj filter**:
   - **Træningstype** (Workout Type) · **er** · **Løb** (Running).
 - Tryk **Tilføj filter** igen:
@@ -36,7 +36,7 @@ Handlingen kommer ind som «Find *Alle sundhedsprøver* hvor …». Sæt den op 
 - **Sortér efter**: Startdato. **Rækkefølge**: Ældste først (er ligegyldigt, men pænt).
 - **Begræns**: slået fra.
 
-Resultatet af denne handling hedder **Sundhedsprøver** — det skal vi bruge om et øjeblik.
+Resultatet af denne handling hedder **Træninger** — det skal vi bruge om et øjeblik.
 
 ---
 
@@ -53,31 +53,31 @@ Den skal sættes til **Tekst** (den tomme tekst lige ovenfor) — det sker af si
 
 Søg **gentag** → vælg **Gentag for hver** (Repeat with Each).
 
-Den skal gentage for **Sundhedsprøver** (resultatet fra trin 1). Hvis den har
+Den skal gentage for **Træninger** (resultatet fra trin 1). Hvis den har
 valgt noget andet: tryk på den blå variabel i handlingen, vælg **Vælg variabel**
-og peg på Find sundhedsprøver-handlingen.
+og peg på Find træninger-handlingen.
 
 Alt herunder skal ligge **inde i** løkken, dvs. mellem «Gentag for hver» og
 «Afslut gentagelse». Handlinger, du tilføjer mens løkken er valgt, lander der.
 
 ### 3a. Distancen i km
-Søg **detaljer** → **Hent detaljer om sundhedsprøve** (Get Details of Health Sample).
+Søg **detaljer** → **Hent detaljer om træning** (Get Details of Workout).
 - Tryk på **Detalje** → vælg **Distance**.
 - Input skal være **Gentag-element** (Repeat Item).
 
 Søg **konverter** → **Konverter måleenhed** (Convert Measurement).
-- Konverterer **Detaljer om sundhedsprøve** (lige ovenfor) til **Kilometer** (km).
+- Konverterer **Detaljer om træning** (lige ovenfor) til **Kilometer** (km).
 
 ### 3b. Varigheden i minutter
-Igen **Hent detaljer om sundhedsprøve** → **Detalje** = **Varighed** (Duration), input **Gentag-element**.
+Igen **Hent detaljer om træning** → **Detalje** = **Varighed** (Duration), input **Gentag-element**.
 
 Igen **Konverter måleenhed** → til **Minutter** (min).
 
 ### 3c. Starttidspunktet som ISO-dato
-Igen **Hent detaljer om sundhedsprøve** → **Detalje** = **Startdato** (Start Date), input **Gentag-element**.
+Igen **Hent detaljer om træning** → **Detalje** = **Startdato** (Start Date), input **Gentag-element**.
 
 Søg **formatér** → **Formatér dato** (Format Date).
-- Dato: **Detaljer om sundhedsprøve** (startdatoen lige ovenfor).
+- Dato: **Detaljer om træning** (startdatoen lige ovenfor).
 - **Datoformat**: **ISO 8601**.
 - Tryk **Vis mere** → slå **ISO 8601-tid** (Include ISO 8601 Time) **til**.
 
