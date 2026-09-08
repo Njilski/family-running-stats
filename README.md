@@ -79,9 +79,18 @@ Archivo is vendored from `@fontsource/archivo` — no CDN at runtime.
 
 ## Members
 
-The five from the design are seeded (Andreas admin). To add one, an admin posts
-`{ "name": "Ida", "tag": "8 år", "initials": "ID", "suggestion": 2.0 }` to
-`POST /api/members` (the invite-link flow from the design is on the roadmap).
+The five from the design are seeded (Andreas admin). An admin manages members on
+the Justering screen: **REDIGÉR** on a row edits name, age, role and initials;
+**+ TILFØJ MEDLEM** adds one; a member (never yourself) can be removed together
+with all their runs. Age sets the *suggested* adjustment (adult 1,00 · 11 → 1,60
+· 9 → 1,85 · 6 → 2,40, with the ages in between filled in); the actual
+adjustment is set with the – / + steppers and applies from the next run.
+
+## Logging a run
+
+Distance and time have steppers (0,5 km / 5 min) and both numbers can be tapped
+to type an exact value: `6,23` (comma or dot), and time as `34`, `34,5`,
+`34:20` or `1:02:15`. Time is stored as decimal minutes.
 
 ## Deploying
 
@@ -139,9 +148,19 @@ gcloud run services update family-running-stats --region europe-west1 --project 
 Later deploys keep those. Add env vars with `--update-env-vars`, never
 `--set-env-vars` (which replaces the whole set).
 
+**Changing the family code**: add a new secret version, disable the old one,
+and roll a revision so `latest` is re-read (Cloud Run resolves it at instance start):
+
+```bash
+read -s -p "Ny kode: " PIN && printf '%s' "$PIN" | gcloud secrets versions add running-family-pin --data-file=- --project=$PROJECT; unset PIN
+gcloud secrets versions disable 1 --secret=running-family-pin --project=$PROJECT   # the previous version number
+gcloud run services update family-running-stats --region europe-west1 --project $PROJECT \
+  --set-secrets FAMILY_PIN=running-family-pin:latest,SESSION_SECRET=running-session-secret:latest
+```
+
 ## Roadmap
 
-- Invite link for new members (`/join/<token>`), replacing the admin API call.
+- Invite link for new members (`/join/<token>`), so a child can join from their own phone.
 - Push notifications for Beskeder (currently in-app only); a Sunday e-mail
   with the poster as a first step.
 - Strava per-runner OAuth and Apple Health via an iOS Shortcut posting to an

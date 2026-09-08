@@ -19,7 +19,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import * as store from './src/store.js';
 import { computeAll, PERIODS, periodRanges } from './src/stats.js';
-import { validateActivity, clampAdjustment, newMember, newId } from './src/model.js';
+import { validateActivity, clampAdjustment, newMember, newId, deriveMember, initialsFor } from './src/model.js';
 import { nudgesForSave, nudgesFor } from './src/nudges.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -199,36 +199,68 @@ app.post('/api/nudges/:id/dismiss', requireMember, async (req, res) => {
 
 // --- Admin: members ---------------------------------------------------------------------------------
 //
-// The design onboards new members via an invite link. Until that exists, an
-// admin adds them here (name, tag like "8 år", initials, suggested adjustment).
+// Admins add, edit and remove family members from the Justering screen. Age
+// drives the suggested adjustment; the actual adjustment is set separately and
+// only ever applies to runs logged after the change.
 
 function requireAdmin(req, res, next) {
   if (!req.member.isAdmin) return res.status(403).json({ error: 'Kun for admin.' });
   next();
 }
 
+function parseMemberFields(body, existing) {
+  const b = body || {};
+  const name = b.name !== undefined ? String(b.name).trim().slice(0, 40) : existing?.name;
+  if (!name) return { error: 'Navn mangler.' };
+  let age = b.age !== undefined ? b.age : existing?.age ?? null;
+  if (age === '' || age === null) age = null;
+  else {
+    age = Number(age);
+    if (!Number.isInteger(age) || age < 1 || age > 110) return { error: 'Alder skal være et helt tal.' };
+  }
+  const role = b.role !== undefined ? String(b.role).trim().slice(0, 20) || null : existing?.role ?? null;
+  let initials = b.initials !== undefined ? String(b.initials).trim().slice(0, 2).toUpperCase() : existing?.initials;
+  if (!initials || (b.name !== undefined && b.initials === undefined && existing && existing.initials === initialsFor(existing.name))) {
+    initials = initialsFor(name);
+  }
+  return { fields: { name, age, role, initials } };
+}
+
 app.post('/api/members', requireMember, requireAdmin, async (req, res) => {
-  const { name, tag, initials, suggestion } = req.body || {};
-  if (!name?.trim()) return res.status(400).json({ error: 'Navn mangler.' });
+  const { fields, error } = parseMemberFields(req.body);
+  if (error) return res.status(400).json({ error });
   const members = await store.listMembers();
-  let id = String(name).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '') || newId();
+  if (members.some((m) => m.name.toLowerCase() === fields.name.toLowerCase())) {
+    return res.status(409).json({ error: `${fields.name} er allerede med.` });
+  }
+  let id = fields.name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '') || newId();
   if (members.some((m) => m.id === id)) id = `${id}-${newId()}`;
-  const s = clampAdjustment(suggestion ?? 1) ?? 1;
-  const member = newMember({
-    id, name: name.trim(), tag: String(tag || '').trim(), initials: String(initials || name).slice(0, 2).toUpperCase(),
-    ageHint: String(tag || '').trim(), suggestion: s, isAdmin: false,
-    sortOrder: Math.max(0, ...members.map((m) => m.sortOrder ?? 0)) + 1,
-  });
+  const member = newMember({ id, ...fields, isAdmin: false }, Math.max(0, ...members.map((m) => m.sortOrder ?? 0)) + 1);
   await store.saveMember(member);
   res.json(publicMember(member));
 });
 
+app.put('/api/members/:id', requireMember, requireAdmin, async (req, res) => {
+  const target = await store.getMember(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Not found' });
+  const { fields, error } = parseMemberFields(req.body, target);
+  if (error) return res.status(400).json({ error });
+  const others = (await store.listMembers()).filter((m) => m.id !== target.id);
+  if (others.some((m) => m.name.toLowerCase() === fields.name.toLowerCase())) {
+    return res.status(409).json({ error: `${fields.name} er allerede med.` });
+  }
+  Object.assign(target, fields);
+  deriveMember(target);
+  await store.saveMember(target);
+  res.json(publicMember(target));
+});
+
 app.delete('/api/members/:id', requireMember, requireAdmin, async (req, res) => {
-  if (req.params.id === req.member.id) return res.status(400).json({ error: 'Du kan ikke slette dig selv.' });
+  if (req.params.id === req.member.id) return res.status(400).json({ error: 'Du kan ikke fjerne dig selv.' });
   const target = await store.getMember(req.params.id);
   if (!target) return res.status(404).json({ error: 'Not found' });
   await store.deleteMember(target.id);
-  res.json({ ok: true });
+  res.json({ ok: true, state: await buildState(req.member) });
 });
 
 // --- helpers ---------------------------------------------------------------------------------------
@@ -239,6 +271,8 @@ function publicMember(m) {
   return {
     id: m.id,
     name: m.name,
+    age: m.age ?? null,
+    role: m.role ?? null,
     tag: m.tag,
     initials: m.initials,
     ageHint: m.ageHint,

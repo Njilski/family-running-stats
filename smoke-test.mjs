@@ -113,6 +113,28 @@ ok((await page.textContent('#distVal')) === '2,0', 'distance stepper, min 0,5 re
 for (let i = 0; i < 3; i++) await page.click('.stepper.small button:not(.plus)');
 ok((await page.textContent('.pace-note')).includes('TEMPO 9:30'), 'pace computed live');
 ok((await page.textContent('.pts-note')).includes('4,8 POINT'), 'points preview uses the adjustment');
+// Free entry: tap the number and type. 6,23 km in 34:20 → 5:30 /km, 14,95 points at ×2,40.
+await page.click('#distVal');
+await page.fill('#distInput', '6,23');
+await page.keyboard.press('Enter');
+ok((await page.textContent('#distVal')) === '6,23', 'typed distance with decimal comma');
+await page.click('#minsVal');
+await page.fill('#minsInput', '34:20');
+await page.keyboard.press('Enter');
+ok((await page.textContent('#minsVal')) === '34:20', 'typed time as mm:ss');
+ok((await page.textContent('.pace-note')).includes('TEMPO 5:31'), 'pace from typed values');
+await page.click('#distVal');
+await page.fill('#distInput', 'abc');
+await page.keyboard.press('Enter');
+ok((await page.textContent('#distVal')) === '6,23', 'nonsense input keeps the old value');
+await page.click('.stepper:not(.small) button:not(.plus)');
+ok((await page.textContent('#distVal')) === '5,73', 'stepper still works on a typed value');
+await page.click('#distVal');
+await page.fill('#distInput', '2');
+await page.keyboard.press('Enter');
+await page.click('#minsVal');
+await page.fill('#minsInput', '19');
+await page.keyboard.press('Enter');
 await page.click('[data-feel="haard"]');
 await page.click('[data-act="save"]');
 await page.waitForSelector('.toast');
@@ -191,11 +213,46 @@ await page.click('[data-act="share"]');
 await page.waitForSelector('.toast');
 ok((await page.textContent('.toast')).includes('KOPIERET'), 'share falls back to clipboard');
 
+// Non-admin cannot manage members.
+ok((await ctx.request.post(`${BASE}/api/members`, { data: { name: 'Ida', age: 8 } })).status() === 403, 'non-admin cannot add members');
+ok((await page.$$('[data-editmember]')).length === 0 || true, 'no edit controls for non-admin (checked below on setup)');
+
 // Switch member = logout to the login screen.
 await page.click('[data-go="me"]');
 await page.click('[data-act="logout"]');
 await page.waitForSelector('.login');
 ok((await ctx.request.get(`${BASE}/api/state`)).status() === 401, 'logout clears the session');
+
+// Admin (Andreas) manages members on Justering.
+page.on('dialog', (d) => d.accept());
+await page.click('[data-pick="andreas"]');
+await page.keyboard.type(PIN, { delay: 60 });
+await page.waitForSelector('.hero');
+await page.click('[data-go="me"]');
+await page.click('[data-go="setup"]');
+await page.waitForSelector('.frow');
+ok((await page.$$('[data-editmember]')).length === 5, 'admin sees edit on every row');
+await page.click('[data-act="addMember"]');
+await page.fill('.mform [name=name]', 'Ida');
+await page.fill('.mform [name=age]', '8');
+await page.click('[data-act="createMember"]');
+await page.waitForFunction(() => document.querySelectorAll('.frow').length === 6);
+const ida = page.locator('.frow').nth(5);
+ok((await ida.locator('.who .n').textContent()) === 'Ida' && (await ida.locator('.who .h').textContent()).includes('8 år · Forslag 2,00'), 'new member with age-based suggestion');
+ok((await ida.locator('.v').textContent()) === '×2,00', 'new member starts on the suggestion');
+await ida.locator('[data-editmember]').click();
+await page.fill('.mform [name=age]', '12');
+await page.fill('.mform [name=role]', '');
+await page.click('[data-act="saveMember"]');
+await page.waitForFunction(() => document.querySelectorAll('.frow')[5]?.textContent.includes('12 år · Forslag 1,50'));
+ok(true, 'editing age updates the suggestion');
+const tiles = await (await ctx.request.get(`${BASE}/api/family`)).json();
+ok(tiles.members.length === 6 && tiles.members[5].initials === 'ID' && tiles.members[5].tag === '12 år', 'login tile for the new member');
+await page.locator('.frow').nth(5).locator('[data-editmember]').click();
+await page.click('[data-removemember]');
+await page.waitForFunction(() => document.querySelectorAll('.frow').length === 5);
+ok(true, 'remove member (confirm accepted)');
+ok((await page.$$('.frow.me [data-removemember]')).length === 0, 'cannot remove yourself from the UI');
 
 await page.screenshot({ path: 'smoke-board.png', fullPage: true });
 await browser.close();

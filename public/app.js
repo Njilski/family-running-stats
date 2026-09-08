@@ -31,6 +31,9 @@
     toast: '', error: '', busy: false,
     loginPick: null, pin: '',
     draftAdjust: null, // { memberId: value } while on the Justering screen
+    editing: null, // 'dist' | 'mins' while a value on Log tur is being typed
+    editMember: null, // member id whose details are open on Justering
+    addMember: false,
   };
 
   // --- API ------------------------------------------------------------------------
@@ -97,6 +100,32 @@
     const d = new Date(iso + 'T12:00:00');
     return `${d.getDate()}. ${MONTHS[d.getMonth()]}`;
   }
+  // Distance keeps two decimals only when they are used: 6 → "6,0", 6.23 → "6,23".
+  function kmStr(v) { return n(v, Math.round(v * 100) % 10 === 0 ? 1 : 2); }
+  // Minutes with seconds when present: 34 → "34", 34.33 → "34:20".
+  function minStr(m) {
+    const total = Math.round(m * 60);
+    const sec = total % 60;
+    return sec ? `${Math.floor(total / 60)}:${String(sec).padStart(2, '0')}` : String(Math.round(m));
+  }
+  // Accepts "6,23", "6.23"; and for time "34", "34,5", "34:20", "1:02:15".
+  function parseKm(text) {
+    const v = Number(String(text).trim().replace(',', '.'));
+    return Number.isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : null;
+  }
+  function parseMinutes(text) {
+    const t = String(text).trim().replace(',', '.');
+    if (!t) return null;
+    if (t.includes(':')) {
+      const parts = t.split(':').map(Number);
+      if (parts.some((x) => !Number.isFinite(x) || x < 0)) return null;
+      const [h, m, sec] = parts.length === 3 ? parts : [0, parts[0], parts[1]];
+      const total = h * 60 + m + sec / 60;
+      return total > 0 ? Math.round(total * 100) / 100 : null;
+    }
+    const v = Number(t);
+    return Number.isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : null;
+  }
   function paceStr(mins, km) {
     const s = (mins * 60) / Math.max(km, 0.1);
     return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
@@ -124,6 +153,8 @@
       ${chrome ? `<nav class="tabs">${TABS.map((t) => `<button class="${t.key === st.screen ? 'on' : ''}" data-go="${t.key}">${t.label}</button>`).join('')}</nav>` : ''}`;
     if (st.screen === 'login') { const i = app.querySelector('#pinInput'); if (i && st.loginPick) i.focus(); }
     if (st.screen === 'log' && st.day === 'pick') { const i = app.querySelector('#pickDate'); if (i && !st.pickDate) i.focus(); }
+    if (st.screen === 'log' && st.editing) { const i = app.querySelector('#distInput, #minsInput'); if (i) { i.focus(); i.select(); } }
+    if (st.screen === 'setup' && (st.editMember || st.addMember)) { const i = app.querySelector('.mform input'); if (i && !i.value) i.focus(); }
   }
 
   // 1. Tavlen
@@ -179,15 +210,21 @@
       <div class="sec tight"><div class="label">LØBER</div><div class="runner">${esc(me.name)}</div><div class="runner-note num">${esc(me.tag)} · justering ×${n(me.adjustment, 2)}</div></div>
       <div class="sec"><div class="label">AFSTAND</div>
         <div class="stepper"><button data-act="dist" data-d="-0.5" aria-label="Mindre">–</button>
-          <div class="val num"><span class="big" id="distVal">${n(st.dist, 1)}</span><span class="unit">KM</span></div>
+          <div class="val num">${st.editing === 'dist'
+            ? `<input class="big edit" id="distInput" inputmode="decimal" value="${kmStr(st.dist)}" aria-label="Kilometer">`
+            : `<button class="big tap" id="distVal" data-edit="dist" title="Tryk for at skrive">${kmStr(st.dist)}</button>`}<span class="unit">KM</span></div>
           <button class="plus" data-act="dist" data-d="0.5" aria-label="Mere">+</button></div>
         <div class="pts-note num">= ${n(st.dist * me.adjustment, 1)} POINT MED DIN JUSTERING</div>
+        <div class="type-hint">Tryk på tallet for at skrive det præcist, fx 6,23.</div>
       </div>
       <div class="sec"><div class="label">TID</div>
         <div class="stepper small"><button data-act="mins" data-d="-5" aria-label="Mindre">–</button>
-          <div class="val num"><span class="mid">${st.mins}</span><span class="unit">MIN</span></div>
+          <div class="val num">${st.editing === 'mins'
+            ? `<input class="mid edit" id="minsInput" inputmode="numeric" value="${minStr(st.mins)}" aria-label="Minutter">`
+            : `<button class="mid tap" id="minsVal" data-edit="mins" title="Tryk for at skrive">${minStr(st.mins)}</button>`}<span class="unit">MIN</span></div>
           <button class="plus" data-act="mins" data-d="5" aria-label="Mere">+</button></div>
         <div class="pace-note num">TEMPO ${paceStr(st.mins, st.dist)} / KM</div>
+        <div class="type-hint">Tryk på tallet for at skrive, fx 34:20.</div>
       </div>
       <div class="sec"><div class="label">HVORNÅR</div>
         <div class="seg three">${days.map((d) => `<button class="${d.k === st.day ? 'on' : ''}" data-day="${d.k}">${d.l}</button>`).join('')}</div>
@@ -343,15 +380,37 @@
             <button class="st" data-adj="${m.id}" data-d="0.05" ${editable ? '' : 'disabled'} aria-label="Højere">+</button>
           </div>
           <div class="track"><div class="${m.id === S.me.id ? 'fill-red' : 'fill-ink'}" style="width:${(((v - 1) / 2) * 100).toFixed(0)}%"></div></div>
-          <div class="foot"><span class="ex num">10 km = ${n(10 * v, 1)} point</span><button class="reset" data-reset="${m.id}" ${editable ? '' : 'disabled'}>NULSTIL</button></div>
+          <div class="foot"><span class="ex num">10 km = ${n(10 * v, 1)} point</span><span>${admin ? `<button class="reset ink" data-editmember="${m.id}">${st.editMember === m.id ? 'LUK' : 'REDIGÉR'}</button>` : ''}<button class="reset" data-reset="${m.id}" ${editable ? '' : 'disabled'}>NULSTIL</button></span></div>
+          ${st.editMember === m.id ? memberForm(m) : ''}
         </div>`;
       }).join('')}
+      ${admin ? `<div class="sec tight">${st.addMember ? memberForm(null) : `<button class="btn-block" data-act="addMember">+ TILFØJ MEDLEM</button>`}</div>` : ''}
       <div class="stack">
         <button class="btn-block" data-act="resetAll">NULSTIL ALLE TIL FORSLAG</button>
         <button class="btn-block primary" data-act="saveAdjust" ${st.busy ? 'disabled' : ''}>GEM OG SE TAVLEN →</button>
         ${st.error ? `<div class="err">${esc(st.error)}</div>` : ''}
         <div class="note">Ændringer gælder fra næste tur — gamle ture står med den justering, de blev logget med.</div>
       </div>`;
+  }
+
+  // Inline member form on Justering (admin only). m = null → add.
+  function memberForm(m) {
+    const isMe = m && m.id === S.me.id;
+    return `<form class="mform" data-member-form="${m ? esc(m.id) : ''}">
+      <div class="mgrid">
+        <label><span>NAVN</span><input name="name" value="${esc(m?.name || '')}" maxlength="40" autocomplete="off" required></label>
+        <label><span>ALDER</span><input name="age" inputmode="numeric" value="${m?.age ?? ''}" maxlength="3" placeholder="fx 8"></label>
+        <label><span>ROLLE <i>(valgfri)</i></span><input name="role" value="${esc(m?.role || '')}" maxlength="20" placeholder="Far, Mor, Mormor…"></label>
+        <label><span>INITIALER</span><input name="initials" value="${esc(m?.initials || '')}" maxlength="2" placeholder="auto"></label>
+      </div>
+      <div class="note num" style="margin-top:8px">Forslag til justering følger alderen: under 18 får et tillæg, voksne står på ×1,00. Justeringen selv sætter du med – og + ovenfor.</div>
+      <div class="mactions">
+        <button type="button" class="btn-block primary small" data-act="${m ? 'saveMember' : 'createMember'}" ${st.busy ? 'disabled' : ''}>${m ? 'GEM' : 'TILFØJ →'}</button>
+        <button type="button" class="btn-block small" data-act="cancelMember">ANNULLER</button>
+        ${m && !isMe ? `<button type="button" class="reset danger" data-removemember="${esc(m.id)}">FJERN MEDLEM OG ALLE TURE</button>` : ''}
+      </div>
+      ${st.error ? `<div class="err">${esc(st.error)}</div>` : ''}
+    </form>`;
   }
 
   // 8. Login
@@ -388,7 +447,7 @@
         st.error = '';
         if (d.go !== 'board') st.toast = '';
         if (d.go === 'me') { st.viewed = S.me.id; st.rival = defaultRival(S.me.id); }
-        if (d.go === 'setup') st.draftAdjust = {};
+        if (d.go === 'setup') { st.draftAdjust = {}; st.editMember = null; st.addMember = false; }
         st.screen = d.go;
         render();
         // Someone else may have logged since we last looked — the board is live.
@@ -401,8 +460,9 @@
       if (d.open) { st.viewed = d.open; st.rival = defaultRival(d.open); st.screen = 'me'; return render(); }
       if (d.view) { st.viewed = d.view; if (st.rival === d.view) st.rival = defaultRival(d.view); return render(); }
       if (d.rival) { st.rival = d.rival; return render(); }
-      if (d.act === 'dist') { st.dist = Math.max(0.5, +(st.dist + Number(d.d)).toFixed(1)); return render(); }
-      if (d.act === 'mins') { st.mins = Math.max(5, st.mins + Number(d.d)); return render(); }
+      if (d.act === 'dist') { st.editing = null; st.dist = Math.max(0.5, +(st.dist + Number(d.d)).toFixed(2)); return render(); }
+      if (d.act === 'mins') { st.editing = null; st.mins = Math.max(1, +(st.mins + Number(d.d)).toFixed(2)); return render(); }
+      if (d.edit) { st.editing = d.edit; return render(); }
       if (d.day) { st.day = d.day; st.error = ''; return render(); }
       if (d.feel) { st.feel = d.feel; return render(); }
       if (d.act === 'save') return saveRun();
@@ -413,11 +473,28 @@
       if (d.reset) { const m = member(d.reset); st.draftAdjust = { ...st.draftAdjust, [d.reset]: m.suggestion }; return render(); }
       if (d.act === 'resetAll') { st.draftAdjust = Object.fromEntries(S.members.filter((m) => S.me.isAdmin || m.id === S.me.id).map((m) => [m.id, m.suggestion])); return render(); }
       if (d.act === 'saveAdjust') return saveAdjustments();
+      if (d.editmember) { st.editMember = st.editMember === d.editmember ? null : d.editmember; st.addMember = false; st.error = ''; return render(); }
+      if (d.act === 'addMember') { st.addMember = true; st.editMember = null; st.error = ''; return render(); }
+      if (d.act === 'cancelMember') { st.addMember = false; st.editMember = null; st.error = ''; return render(); }
+      if (d.act === 'saveMember' || d.act === 'createMember') return saveMember(b.closest('.mform'));
+      if (d.removemember) return removeMember(d.removemember);
       if (d.act === 'share') return share();
       if (d.pick) { st.loginPick = d.pick; st.pin = ''; st.error = ''; return render(); }
     } catch (err) {
       st.error = err.message; st.busy = false; render();
     }
+  });
+
+  function commitEdit(input) {
+    if (input.id === 'distInput') { const v = parseKm(input.value); if (v !== null) st.dist = Math.min(300, v); }
+    if (input.id === 'minsInput') { const v = parseMinutes(input.value); if (v !== null) st.mins = Math.min(24 * 60, v); }
+    st.editing = null;
+    render();
+  }
+  app.addEventListener('focusout', (e) => { if (e.target.id === 'distInput' || e.target.id === 'minsInput') commitEdit(e.target); });
+  app.addEventListener('keydown', (e) => {
+    if ((e.target.id === 'distInput' || e.target.id === 'minsInput') && (e.key === 'Enter' || e.key === 'Escape')) { e.preventDefault(); commitEdit(e.target); }
+    if (e.target.closest?.('.mform') && e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); e.target.closest('.mform').querySelector('[data-act="saveMember"], [data-act="createMember"]')?.click(); }
   });
 
   app.addEventListener('input', (e) => {
@@ -457,9 +534,39 @@
     try {
       const r = await api('POST', '/api/activities', { date, km: st.dist, minutes: st.mins, feel: st.feel });
       S = r.state; afterState();
-      st.toast = `GEMT · +${n(r.activity.km, 1)} KM (${n(r.activity.points, 1)} POINT)`;
+      st.toast = `GEMT · +${kmStr(r.activity.km)} KM (${n(r.activity.points, 1)} POINT)`;
       st.screen = 'board'; st.period = 'week';
       st.dist = 6.0; st.mins = 34; st.day = 'today'; st.pickDate = ''; st.feel = 'ok';
+    } catch (err) { st.error = err.message; }
+    st.busy = false; render();
+  }
+
+  function readMemberForm(form) {
+    const f = new FormData(form);
+    return { name: f.get('name'), age: String(f.get('age')).trim(), role: f.get('role'), ...(String(f.get('initials')).trim() ? { initials: f.get('initials') } : {}) };
+  }
+
+  async function saveMember(form) {
+    const id = form.dataset.memberForm;
+    const body = readMemberForm(form);
+    st.busy = true; st.error = ''; render();
+    try {
+      if (id) await api('PUT', `/api/members/${encodeURIComponent(id)}`, body);
+      else await api('POST', '/api/members', body);
+      await refresh(false);
+      st.editMember = null; st.addMember = false;
+    } catch (err) { st.error = err.message; }
+    st.busy = false; render();
+  }
+
+  async function removeMember(id) {
+    const m = member(id);
+    if (!confirm(`Fjern ${m.name} og alle ${m.name}s ture? Det kan ikke gøres om.`)) return;
+    st.busy = true; st.error = ''; render();
+    try {
+      const r = await api('DELETE', `/api/members/${encodeURIComponent(id)}`);
+      S = r.state; afterState();
+      st.editMember = null;
     } catch (err) { st.error = err.message; }
     st.busy = false; render();
   }

@@ -43,11 +43,18 @@ smoke-test.mjs   Logic checks + full browser walk-through at 402×874.
 
 ## Decisions worth knowing
 
-**Faithful to the design, adapted in two places.** (1) The handoff proposed
+**Faithful to the design, extended in three places.** (1) The handoff proposed
 magic-link login for adults via Supabase Auth; we have no Supabase, so everyone
 uses the name tile + family code that the login screen shows anyway. Admin is
-`isAdmin` on the member (Andreas). (2) New members are added by an admin via
-`POST /api/members`; the invite link is on the roadmap.
+`isAdmin` on the member (Andreas). (2) Members are managed by admins inline on
+the Justering screen (REDIGÉR / + TILFØJ MEDLEM); `age` and `role` are stored
+and `tag`, `ageHint`, `suggestion` are derived by `deriveMember()`. (3) On Log
+tur the big numbers are tappable for exact entry; `minutes` is a decimal
+(34:20 → 34.33) — the design's steppers alone were too coarse for real runs.
+
+**Never re-render an input while it is being typed in.** The PIN boxes did, and
+the digits came out reversed (caret at the start of the recreated field). Update
+in place (PIN) or swap to an input only on tap and commit on blur/Enter (Log tur).
 
 **`adjustmentAtLog` is sacred.** Points are computed from the snapshot on each
 activity, never from the member's current adjustment. The Justering screen

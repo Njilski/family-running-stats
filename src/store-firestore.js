@@ -3,7 +3,7 @@
 // tools, hence the running_ prefix on every collection.
 
 import { Firestore } from '@google-cloud/firestore';
-import { SEED_MEMBERS, newMember } from './model.js';
+import { SEED_MEMBERS, newMember, deriveMember } from './model.js';
 
 const db = new Firestore();
 const members = db.collection('running_members');
@@ -19,9 +19,19 @@ export async function listMembers() {
   }
   const list = snap.docs.map((d) => d.data());
   // Members seeded before sortOrder existed: backfill once from the seed order.
-  const fixes = list.filter((m) => m.sortOrder === undefined);
+  const fixes = list.filter((m) => m.sortOrder === undefined || m.age === undefined);
   if (fixes.length) {
-    fixes.forEach((m) => { m.sortOrder = Math.max(0, SEED_MEMBERS.findIndex((s) => s.id === m.id)); });
+    fixes.forEach((m) => {
+      if (m.sortOrder === undefined) m.sortOrder = Math.max(0, SEED_MEMBERS.findIndex((s) => s.id === m.id));
+      if (m.age === undefined) {
+        // Members created before age/role existed carried them only in the tag ("Far · 44", "11 år").
+        const seed = SEED_MEMBERS.find((s) => s.id === m.id);
+        const n = String(m.tag || '').match(/\d+/);
+        m.age = seed?.age ?? (n ? Number(n[0]) : null);
+        m.role = seed?.role ?? (String(m.tag || '').includes('·') ? m.tag.split('·')[0].trim() : null);
+        deriveMember(m);
+      }
+    });
     await Promise.all(fixes.map((m) => members.doc(m.id).set(m)));
   }
   return list.sort(byOrder);

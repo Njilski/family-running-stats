@@ -291,3 +291,27 @@ button:disabled { cursor: default; }
 .pin .box.active { background: var(--color-accent-200); }
 .pin input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; font-size: 24px; }
 .pin .invite { margin-top: 12px; font: 500 10.5px/1.5 var(--font); color: var(--color-neutral-700); }
+
+/* Log tur: the big value is a button you can tap to type */
+.stepper button.tap { width: auto; height: auto; border: 0; border-bottom: 2px dotted var(--color-neutral-400); background: transparent; padding: 0 0 2px; color: inherit; text-align: left; }
+.stepper button.tap:hover { background: transparent; border-bottom-color: var(--color-accent); }
+.stepper .tap.big { font: 900 52px/1 var(--font); letter-spacing: -.04em; }
+.stepper .tap.mid { font: 900 32px/1 var(--font); letter-spacing: -.03em; }
+.stepper input.edit { border: 0; border-bottom: 2px solid var(--color-accent); background: transparent; color: inherit; padding: 0 0 2px; width: 4.4ch; text-align: left; outline: none; }
+.stepper input.edit.big { font: 900 52px/1 var(--font); letter-spacing: -.04em; }
+.stepper input.edit.mid { font: 900 32px/1 var(--font); letter-spacing: -.03em; width: 6ch; }
+.type-hint { margin-top: 6px; font: 500 10px/1.4 var(--font); color: var(--color-neutral-700); }
+
+/* Justering: member form */
+.frow .foot > span:last-child { display: flex; gap: 14px; }
+.reset.ink { color: var(--ink); }
+.reset.danger { color: var(--color-accent-700); }
+.mform { margin-top: 14px; padding-top: 12px; border-top: 2px solid var(--ink); }
+.mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
+.mgrid label span { display: block; font: 800 8.5px/1 var(--font); letter-spacing: .14em; color: var(--color-neutral-700); margin-bottom: 5px; }
+.mgrid label span i { font-style: normal; font-weight: 500; letter-spacing: .05em; text-transform: none; }
+.mgrid input { width: 100%; border: var(--rule); background: var(--paper); padding: 9px 10px; font: 700 14px/1 var(--font); color: var(--ink); }
+.mgrid label:first-child { grid-column: 1 / -1; }
+.mactions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+.btn-block.small { width: auto; padding: 11px 14px; font-size: 10px; }
+.mactions .reset.danger { margin-left: auto; }
