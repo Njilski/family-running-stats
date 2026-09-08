@@ -22,21 +22,23 @@ Du behøver **ikke** en «Modtag input»-handling. Appen sender nøglen som
 
 ---
 
-## 1. Find løbeturene i Sundhed
+## 1. Find træningerne i Sundhed
 
-Søg **træning** → vælg **Find træninger** (Find Workouts). *Ikke* «Find
-sundhedsprøver» — træninger har deres egne handlinger i Genveje.
+Søg **sundhed** → vælg **Find sundhedsprøver** (Find Health Samples).
 
-Handlingen kommer ind som «Find *Alle træninger* hvor …». Sæt den op sådan:
+Handlingen kommer ind som «Find *Alle sundhedsprøver* hvor …».
 
-- Tryk **Tilføj filter**:
-  - **Træningstype** (Workout Type) · **er** · **Løb** (Running).
-- Tryk **Tilføj filter** igen:
-  - **Startdato** (Start Date) · **er i de sidste** (is in the last) · **30** · **dage**.
-- **Sortér efter**: Startdato. **Rækkefølge**: Ældste først (er ligegyldigt, men pænt).
-- **Begræns**: slået fra.
+- Tryk på det blå **Alle sundhedsprøver**. Der åbner en lang liste af typer med et
+  søgefelt øverst. Skriv **træn** i søgefeltet (eller rul helt til bunden) — den
+  sidste gruppe hedder **Træning** / **Træninger** (Workouts). Vælg den. Den
+  ligger *ikke* under skridt, puls osv., så den er let at overse.
+- Tryk **Tilføj filter** → **Startdato** (Start Date) · **er i de sidste** (is in
+  the last) · **30** · **dage**.
+- Der skal **ikke** filtreres på træningstype — serveren sorterer selv gåture,
+  cykling og styrke fra og beholder løb (se 3d).
+- **Sortér efter**: Startdato. **Begræns**: slået fra.
 
-Resultatet af denne handling hedder **Træninger** — det skal vi bruge om et øjeblik.
+Resultatet af denne handling hedder **Sundhedsprøver** — det skal vi bruge om et øjeblik.
 
 ---
 
@@ -53,46 +55,50 @@ Den skal sættes til **Tekst** (den tomme tekst lige ovenfor) — det sker af si
 
 Søg **gentag** → vælg **Gentag for hver** (Repeat with Each).
 
-Den skal gentage for **Træninger** (resultatet fra trin 1). Hvis den har
+Den skal gentage for **Sundhedsprøver** (resultatet fra trin 1). Hvis den har
 valgt noget andet: tryk på den blå variabel i handlingen, vælg **Vælg variabel**
-og peg på Find træninger-handlingen.
+og peg på Find sundhedsprøver-handlingen.
 
 Alt herunder skal ligge **inde i** løkken, dvs. mellem «Gentag for hver» og
 «Afslut gentagelse». Handlinger, du tilføjer mens løkken er valgt, lander der.
 
 ### 3a. Distancen i km
-Søg **detaljer** → **Hent detaljer om træning** (Get Details of Workout).
+Søg **detaljer** → **Hent detaljer om sundhedsprøve** (Get Details of Health Sample).
 - Tryk på **Detalje** → vælg **Distance**.
 - Input skal være **Gentag-element** (Repeat Item).
 
 Søg **konverter** → **Konverter måleenhed** (Convert Measurement).
-- Konverterer **Detaljer om træning** (lige ovenfor) til **Kilometer** (km).
+- Konverterer **Detaljer om sundhedsprøve** (lige ovenfor) til **Kilometer** (km).
 
 ### 3b. Varigheden i minutter
-Igen **Hent detaljer om træning** → **Detalje** = **Varighed** (Duration), input **Gentag-element**.
+Igen **Hent detaljer om sundhedsprøve** → **Detalje** = **Varighed** (Duration), input **Gentag-element**.
 
 Igen **Konverter måleenhed** → til **Minutter** (min).
 
 ### 3c. Starttidspunktet som ISO-dato
-Igen **Hent detaljer om træning** → **Detalje** = **Startdato** (Start Date), input **Gentag-element**.
+Igen **Hent detaljer om sundhedsprøve** → **Detalje** = **Startdato** (Start Date), input **Gentag-element**.
 
 Søg **formatér** → **Formatér dato** (Format Date).
-- Dato: **Detaljer om træning** (startdatoen lige ovenfor).
+- Dato: **Detaljer om sundhedsprøve** (startdatoen lige ovenfor).
 - **Datoformat**: **ISO 8601**.
 - Tryk **Vis mere** → slå **ISO 8601-tid** (Include ISO 8601 Time) **til**.
 
-### 3d. Selve linjen
-Søg **tekst** → **Tekst**. Skriv linjen med de tre variabler indsat via
+### 3d. Træningstypen
+Igen **Hent detaljer om sundhedsprøve** → **Detalje** = **Træningstype** /
+**Aktivitetstype** (Workout Activity Type), input **Gentag-element**. Det er
+den, serveren bruger til at beholde løb («Løb», «Running») og springe resten over.
+
+### 3e. Selve linjen
+Søg **tekst** → **Tekst**. Skriv linjen med de fire variabler indsat via
 **Vælg variabel** (tryk i feltet → variabel-knappen over tastaturet):
 
 ```
-[Formateret dato]|[Konverteret måleenhed fra 3a]|[Konverteret måleenhed fra 3b]|Running
+[Formateret dato]|[Konverteret måleenhed fra 3a]|[Konverteret måleenhed fra 3b]|[Træningstype fra 3d]
 ```
 
 Altså: den formaterede dato, en lodret streg `|`, kilometrene, `|`, minutterne,
-`|Running`. Ingen mellemrum. Hvis appen viser to variabler der begge hedder
-«Konverteret måleenhed», så vælg dem via **Vælg variabel** og peg på den rigtige
-handling i listen.
+`|`, træningstypen. Ingen mellemrum. Hvis appen viser flere variabler med samme
+navn, så vælg dem via **Vælg variabel** og peg på den rigtige handling i listen.
 
 Tip: tryk på en indsat måleenheds-variabel → du kan slå **Vis enhed** fra, så
 der står `6,23` og ikke `6,23 km`. (Serveren klarer begge dele, og både komma og
@@ -153,7 +159,7 @@ Tryk **Færdig** øverst til højre. Det var det.
 Gå i løbeklub-appen → **LOG TUR** → **IMPORTÉR FRA APPLE SUNDHED →**.
 
 Første gang spørger iPhone:
-- om genvejen må læse **Træning** i Sundhed → **Tillad**
+- om genvejen må læse **Træning** i Sundhed → **Tillad** (evt. **Slå alle til**)
 - om den må sende til `family-running-stats-…run.app` → **Tillad altid**
 
 Så hopper den tilbage til appen med «IMPORTERET · 3 NYE TURE FRA APPLE SUNDHED»
@@ -165,7 +171,8 @@ anden gang skal den sige 0 nye; ingenting kommer med to gange.
   `Løbeklub import` — omdøb den.
 - Den siger «INGEN NYE TURE» men du har løbet: tjek at Nike Run Club / Strava /
   Watch skriver til Sundhed (Sundhed-appen → profil → Apps → tillad *Skriv*
-  for Træning). Kun ture af typen **Løb** tæller.
+  for Træning). Kun træninger af typen **Løb** tæller — de andre springes over
+  med vilje.
 - Rødt fejlfelt fra appen om ugyldigt token: åbn importen fra appen igen —
   genvejen må ikke startes direkte fra Genveje.
 
