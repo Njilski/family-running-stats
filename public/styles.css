@@ -315,3 +315,12 @@ button:disabled { cursor: default; }
 .mactions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
 .btn-block.small { width: auto; padding: 11px 14px; font-size: 10px; }
 .mactions .reset.danger { margin-left: auto; }
+
+/* Import from Apple Health */
+.import .reset { border: 0; background: transparent; color: var(--ink); font: 800 9px/1 var(--font); letter-spacing: .08em; padding: 4px 0; }
+.import .help { margin-top: 12px; padding-top: 12px; border-top: var(--hair); font: 500 11.5px/1.55 var(--font); color: var(--color-neutral-700); }
+.import .help p { margin: 0 0 8px; }
+.import .help ol { margin: 0 0 8px; padding-left: 18px; }
+.import .help li { margin-bottom: 4px; }
+.import .help a { color: var(--color-accent-700); font-weight: 700; }
+.import .help b { color: var(--ink); }

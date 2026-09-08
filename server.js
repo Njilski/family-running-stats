@@ -129,23 +129,88 @@ app.post('/api/activities', requireMember, async (req, res) => {
   const actor = members.find((m) => m.id === req.member.id);
   const { activity, error } = validateActivity(req.body, actor, localDate(now));
   if (error) return res.status(400).json({ error });
+  await logRun(members, actor, activity, now);
+  res.json({ ok: true, activity, state: await buildState(actor) });
+});
 
+// Saves one run and generates the Beskeder it causes — the moment a run lands
+// on the board, whether typed in or imported.
+async function logRun(members, actor, activity, now) {
   const before = await store.listActivities();
   const [wFrom, wTo] = periodRanges(now).week;
   const weekBefore = computeAll(members, before, now).periods.week;
   await store.saveActivity(activity);
   const after = [activity, ...before];
   const weekAfter = computeAll(members, after, now).periods.week;
-
-  // Beskeder are born here — the moment a run lands on the board.
   const nudges = nudgesForSave({
     members, actor, activity, now,
     before: weekBefore,
     after: { ...weekAfter, activities: after.filter((a) => a.date >= wFrom && a.date <= wTo) },
   });
   await store.saveNudges(nudges);
+}
 
-  res.json({ ok: true, activity, state: await buildState(actor) });
+// --- Import from Apple Health ------------------------------------------------------------------
+//
+// A web page cannot read HealthKit, so the phone pushes: the app opens a shared
+// iOS Shortcut and hands it the signed-in runner's import token; the Shortcut
+// reads recent running workouts from Health and posts them here. Runs are keyed
+// on their start time, so importing twice never duplicates. Nike Run Club,
+// Strava and Apple Watch all write into Health, so this covers them too.
+
+app.get('/api/me/import-token', requireMember, (req, res) => {
+  res.json({ token: sign(`import|${req.member.id}`), shortcutUrl: process.env.SHORTCUT_URL || null, shortcutName: SHORTCUT_NAME });
+});
+const SHORTCUT_NAME = process.env.SHORTCUT_NAME || 'Løbeklub import';
+
+async function memberFromImportToken(req) {
+  const raw = (req.get('authorization') || '').replace(/^Bearer\s+/i, '').trim() || String(req.query.token || '');
+  const value = unsign(raw);
+  if (!value || !value.startsWith('import|')) return null;
+  return store.getMember(value.slice('import|'.length));
+}
+
+// Body: JSON { runs: [{ start, km, minutes, type? }] } or text/plain with one
+// run per line "start|km|minutes[|type]" — the latter is what Shortcuts builds
+// most easily. `start` is ISO 8601 or anything Date can parse.
+app.post('/api/import/apple-health', express.text({ type: ['text/*', 'application/x-www-form-urlencoded'], limit: '256kb' }), async (req, res) => {
+  const member = await memberFromImportToken(req);
+  if (!member) return res.status(401).json({ error: 'Ugyldigt importtoken. Åbn importen fra appen igen.' });
+
+  let runs = [];
+  if (req.is('json') && req.body && Array.isArray(req.body.runs)) runs = req.body.runs;
+  else {
+    const text = typeof req.body === 'string' ? req.body : String(req.body?.lines || '');
+    runs = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
+      const [start, km, minutes, type] = l.split('|').map((x) => x.trim());
+      return { start, km, minutes, type };
+    });
+  }
+
+  const now = new Date();
+  const today = localDate(now);
+  const members = await store.listMembers();
+  const actor = members.find((m) => m.id === member.id);
+  const existing = new Set((await store.listActivities()).filter((a) => a.memberId === actor.id).map((a) => a.externalId).filter(Boolean));
+  let imported = 0, skipped = 0, rejected = 0;
+  for (const r of runs.slice(0, 500)) {
+    if (r.type && !/run|løb/i.test(String(r.type))) { skipped += 1; continue; }
+    const startMs = Date.parse(String(r.start || ''));
+    if (Number.isNaN(startMs)) { rejected += 1; continue; }
+    const externalId = `apple-health:${new Date(startMs).toISOString()}`;
+    if (existing.has(externalId)) { skipped += 1; continue; }
+    const km = Number(String(r.km ?? '').replace(',', '.'));
+    const minutes = Number(String(r.minutes ?? '').replace(',', '.'));
+    const { activity, error } = validateActivity(
+      { date: localDate(new Date(startMs)), km, minutes: Number.isFinite(minutes) && minutes > 0 ? minutes : null, source: 'apple_health', externalId },
+      actor, today
+    );
+    if (error) { rejected += 1; continue; }
+    await logRun(members, actor, activity, now);
+    existing.add(externalId);
+    imported += 1;
+  }
+  res.json({ ok: true, imported, skipped, rejected });
 });
 
 // Fixing a typo on your own run within the day it was logged. Adults (admins)

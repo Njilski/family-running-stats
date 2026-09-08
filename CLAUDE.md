@@ -52,6 +52,12 @@ and `tag`, `ageHint`, `suggestion` are derived by `deriveMember()`. (3) On Log
 tur the big numbers are tappable for exact entry; `minutes` is a decimal
 (34:20 → 34.33) — the design's steppers alone were too coarse for real runs.
 
+**Imports are runs like any other.** `/api/import/apple-health` authenticates
+with a signed `import|<memberId>` token (issued to the signed-in member, passed
+to the Shortcut as input), dedupes on `externalId = apple-health:<start ISO>`,
+and goes through the same `logRun()` as a typed run, so nudges fire and the
+adjustment snapshot applies. Only running workouts count.
+
 **Never re-render an input while it is being typed in.** The PIN boxes did, and
 the digits came out reversed (caret at the start of the recreated field). Update
 in place (PIN) or swap to an input only on tap and commit on blur/Enter (Log tur).
@@ -115,4 +121,5 @@ cheeky, and says what to do next. Colours only from the tokens in `styles.css`.
 - [ ] Family logs the first real runs
 - [ ] Invite link for new members
 - [ ] Push notifications / Sunday e-mail
-- [ ] Strava, Apple Health imports
+- [x] Apple Health import via Shortcut (endpoint + button); Andreas builds/shares the Shortcut per docs-shortcut.md, then sets SHORTCUT_URL
+- [ ] Strava/NRC direct: assessed and dropped (terms / no API) — Health covers them

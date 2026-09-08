@@ -158,10 +158,28 @@ gcloud run services update family-running-stats --region europe-west1 --project 
   --set-secrets FAMILY_PIN=running-family-pin:latest,SESSION_SECRET=running-session-secret:latest
 ```
 
+## Import from Apple Health (covers Nike Run Club, Strava, Apple Watch)
+
+A web page cannot read HealthKit, so the phone pushes. **IMPORTÉR FRA APPLE
+SUNDHED** on Log tur opens a shared iOS Shortcut with the runner's signed import
+token as input; the Shortcut reads the last 30 days of running workouts from
+Health and POSTs them to `/api/import/apple-health` (text lines
+`start|km|minutes|type` or JSON `{ runs: [...] }`), then reopens the app with
+`?import=<count>`. Runs are keyed on `apple-health:<start ISO>` so a re-import
+never duplicates; non-running workouts are skipped; the current adjustment is
+snapshotted at import time like any other run. How to build and share the
+Shortcut once: `docs-shortcut.md`. Set `SHORTCUT_URL` (and optionally
+`SHORTCUT_NAME`) on the service so the setup panel can link to it.
+
+Anything that syncs to Apple Health — Nike Run Club, Strava, the Watch — comes
+along for free. Direct Strava/NRC integrations were assessed and dropped:
+Strava's API terms forbid showing one user's data to others (the whole point of
+a family board) and require a paid developer subscription; Nike has no API.
+
 ## Roadmap
 
 - Invite link for new members (`/join/<token>`), so a child can join from their own phone.
 - Push notifications for Beskeder (currently in-app only); a Sunday e-mail
   with the poster as a first step.
-- Strava per-runner OAuth and Apple Health via an iOS Shortcut posting to an
-  import endpoint. Activities already carry `source` and `externalId`.
+- Automatic import (a nightly Shortcut automation per phone, or the paid
+  Health Auto Export app posting to the same endpoint) instead of one tap.

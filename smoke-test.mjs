@@ -213,6 +213,35 @@ await page.click('[data-act="share"]');
 await page.waitForSelector('.toast');
 ok((await page.textContent('.toast')).includes('KOPIERET'), 'share falls back to clipboard');
 
+// Import from Apple Health: token, text and JSON bodies, dedupe, wrong token, result toast.
+const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+const tok = await (await ctx.request.get(`${BASE}/api/me/import-token`)).json();
+ok(typeof tok.token === 'string' && tok.token.includes('.'), 'import token issued to the signed-in member');
+const imp1 = await (await ctx.request.post(`${BASE}/api/import/apple-health`, {
+  headers: { Authorization: `Bearer ${tok.token}`, 'Content-Type': 'text/plain' },
+  data: `${daysAgo(0)}T05:10:00+02:00|3,12|20,5|Running\n${daysAgo(4)}T18:00:00+02:00|12|45|Cycling\nnonsense|1|1\n`,
+})).json();
+ok(imp1.imported === 1 && imp1.skipped === 1 && imp1.rejected === 1, `text import: 1 run, cycling skipped, garbage rejected (${JSON.stringify(imp1)})`);
+const imp2 = await (await ctx.request.post(`${BASE}/api/import/apple-health`, {
+  headers: { Authorization: `Bearer ${tok.token}` },
+  data: { runs: [{ start: `${daysAgo(0)}T05:10:00+02:00`, km: 3.12, minutes: 20.5 }, { start: `${daysAgo(1)}T05:00:00+02:00`, km: 2, minutes: 14 }] },
+})).json();
+ok(imp2.imported === 1 && imp2.skipped === 1, 'JSON import dedupes on start time');
+ok((await ctx.request.post(`${BASE}/api/import/apple-health`, { headers: { Authorization: 'Bearer nope', 'Content-Type': 'text/plain' }, data: 'x' })).status() === 401, 'wrong import token refused');
+await page.goto(`${BASE}/?import=2`);
+await page.waitForSelector('.toast');
+ok((await page.textContent('.toast')).includes('IMPORTERET · 2 NYE TURE'), 'return from the Shortcut shows a toast');
+ok(new URL(page.url()).search === '', 'query string cleaned up');
+await page.click('[data-go="me"]');
+await page.waitForSelector('.me-head');
+ok((await page.textContent('.grid2')).includes('fra Sundhed'), 'Mig shows how many runs came from Health');
+await page.click('[data-go="log"]');
+await page.click('[data-act="importHelp"]');
+await page.waitForSelector('.import .help');
+ok((await page.textContent('.import .help')).includes('Genveje'), 'import setup help opens');
+const aksel = await (await ctx.request.get(`${BASE}/api/state`)).json();
+ok(aksel.activities.filter((a) => a.source === 'apple_health').length === 2 && aksel.activities.every((a) => a.source !== 'apple_health' || a.memberId === 'aksel'), 'imported runs belong to the token owner');
+
 // Non-admin cannot manage members.
 ok((await ctx.request.post(`${BASE}/api/members`, { data: { name: 'Ida', age: 8 } })).status() === 403, 'non-admin cannot add members');
 ok((await page.$$('[data-editmember]')).length === 0 || true, 'no edit controls for non-admin (checked below on setup)');
