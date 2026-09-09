@@ -170,15 +170,24 @@ async function memberFromImportToken(req) {
   return store.getMember(value.slice('import|'.length));
 }
 
-// Body: JSON { runs: [{ start, km, minutes, type? }] } or text/plain with one
-// run per line "start|km|minutes[|type]" — the latter is what Shortcuts builds
-// most easily. `start` is ISO 8601 or anything Date can parse.
+// Three body shapes, all ending in the same list of runs:
+//
+//   JSON { dates, km, minutes, types }   four parallel newline-separated lists
+//   JSON { runs: [{ start, km, minutes, type? }] }
+//   text/plain                           one run per line, "start|km|minutes[|type]"
+//
+// The first is the one the Shortcut uses. Shortcuts applies an action to a whole
+// list at once, so four flat actions produce four columns — building a list of
+// dictionaries instead needs a Repeat loop, which is the part people get wrong.
+// `start` is ISO 8601 or anything Date can parse.
 app.post('/api/import/apple-health', express.text({ type: ['text/*', 'application/x-www-form-urlencoded'], limit: '256kb' }), async (req, res) => {
   const member = await memberFromImportToken(req);
   if (!member) return res.status(401).json({ error: 'Ugyldigt importtoken. Åbn importen fra appen igen.' });
 
   let runs = [];
-  if (req.is('json') && req.body && Array.isArray(req.body.runs)) runs = req.body.runs;
+  const b = req.is('json') ? req.body || {} : null;
+  if (b && (b.dates !== undefined || b.starts !== undefined)) runs = runsFromColumns(b);
+  else if (b && Array.isArray(b.runs)) runs = b.runs;
   else {
     const text = typeof req.body === 'string' ? req.body : String(req.body?.lines || '');
     runs = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => {
@@ -203,8 +212,8 @@ app.post('/api/import/apple-health', express.text({ type: ['text/*', 'applicatio
     if (Number.isNaN(startMs)) { rejected += 1; continue; }
     const externalId = `apple-health:${new Date(startMs).toISOString()}`;
     if (existing.has(externalId)) { skipped += 1; continue; }
-    const km = Number(String(r.km ?? '').replace(',', '.'));
-    const minutes = Number(String(r.minutes ?? '').replace(',', '.'));
+    const km = measure(r.km, 'km');
+    const minutes = measure(r.minutes, 'min');
     const { activity, error } = validateActivity(
       { date: localDate(new Date(startMs)), km, minutes: Number.isFinite(minutes) && minutes > 0 ? minutes : null, source: 'apple_health', externalId },
       actor, today
@@ -216,6 +225,42 @@ app.post('/api/import/apple-health', express.text({ type: ['text/*', 'applicatio
   }
   res.json({ ok: true, imported, skipped, rejected });
 });
+
+// Four columns → one list of runs, zipped by position. Blank lines inside a
+// column are kept so the rows stay aligned; only trailing blanks are dropped,
+// because Combine Text leaves one. Shortcuts may hand us a real list instead of
+// a joined string, so both are accepted.
+function runsFromColumns(b) {
+  const col = (v) => {
+    const list = (Array.isArray(v) ? v.map((x) => String(x)) : String(v ?? '').split(/\r?\n/)).map((s) => s.trim());
+    while (list.length && list[list.length - 1] === '') list.pop();
+    return list;
+  };
+  const dates = col(b.dates ?? b.starts);
+  const km = col(b.km ?? b.distances);
+  const minutes = col(b.minutes ?? b.durations);
+  const types = col(b.types ?? b.type);
+  return dates.map((start, i) => ({ start, km: km[i], minutes: minutes[i], type: types[i] }));
+}
+
+// A number out of whatever Shortcuts wrote: "6,23", "6.23", "6,23 km", "6230 m",
+// "34 min", "2050 sek". Whether a unit comes along depends on one toggle nobody
+// should have to find, so read it when it is there instead of demanding it.
+function measure(v, kind) {
+  const s = String(v ?? '').replace(/ /g, ' ').trim();
+  const m = s.match(/-?\d+(?:[.,]\d+)?/);
+  if (!m) return NaN;
+  let n = Number(m[0].replace(',', '.'));
+  const unit = s.slice(m.index + m[0].length).trim().toLowerCase();
+  if (kind === 'km') {
+    if (/^(m|meter|metre)\b/.test(unit)) n /= 1000;
+    else if (/^(mi|mile)/.test(unit)) n *= 1.609344;
+  } else if (kind === 'min') {
+    if (/^(s|sec|sek)/.test(unit)) n /= 60;
+    else if (/^(t|h|hr|hour|time)/.test(unit)) n *= 60;
+  }
+  return n;
+}
 
 // A run logged by mistake. You delete your own; an admin deletes anyone's, so a
 // six-year-old's double tap does not need his own login to fix. The row is only

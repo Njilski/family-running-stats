@@ -228,6 +228,39 @@ const imp2 = await (await ctx.request.post(`${BASE}/api/import/apple-health`, {
   data: { runs: [{ start: `${daysAgo(0)}T05:10:00+02:00`, km: 3.12, minutes: 20.5 }, { start: `${daysAgo(1)}T05:00:00+02:00`, km: 2, minutes: 14 }] },
 })).json();
 ok(imp2.imported === 1 && imp2.skipped === 1, 'JSON import dedupes on start time');
+// The Shortcut's own shape: four parallel columns, no Repeat loop on the phone.
+// Trailing newlines are what Combine Text leaves behind; rows must stay aligned.
+const imp3 = await (await ctx.request.post(`${BASE}/api/import/apple-health`, {
+  headers: { Authorization: `Bearer ${tok.token}` },
+  data: {
+    dates: `${daysAgo(2)}T06:00:00+02:00\n${daysAgo(3)}T06:00:00+02:00\n${daysAgo(2)}T06:00:00+02:00\n`,
+    km: '4,4\n18\n4,4\n',
+    minutes: '25\n55\n25\n',
+    types: 'Løb\nCykling\nLøb\n',
+  },
+})).json();
+ok(imp3.imported === 1 && imp3.skipped === 2, `columns: the run in, the cycling and the repeat out (${JSON.stringify(imp3)})`);
+const imp4 = await (await ctx.request.post(`${BASE}/api/import/apple-health`, {
+  headers: { Authorization: `Bearer ${tok.token}` },
+  data: { dates: [`${daysAgo(3)}T07:30:00+02:00`], km: ['3'], minutes: ['16'], types: ['Outdoor Run'] },
+})).json();
+ok(imp4.imported === 1, 'columns may also arrive as real lists, not joined text');
+// Units tag along or they don't, depending on a "Show Unit" toggle in the
+// Shortcut. Read them either way rather than making that toggle matter.
+const imp5 = await (await ctx.request.post(`${BASE}/api/import/apple-health`, {
+  headers: { Authorization: `Bearer ${tok.token}` },
+  data: {
+    dates: `${daysAgo(5)}T06:00:00+02:00\n${daysAgo(6)}T06:00:00+02:00`,
+    km: '7,5 km\n5200 m',
+    minutes: '41 min\n1800 sek',
+    types: 'Løb\nUdendørs løb',
+  },
+})).json();
+ok(imp5.imported === 2, `values with units are read (${JSON.stringify(imp5)})`);
+const withUnits = (await (await ctx.request.get(`${BASE}/api/state`)).json()).activities;
+const u1 = withUnits.find((x) => x.date === daysAgo(5)), u2 = withUnits.find((x) => x.date === daysAgo(6));
+ok(u1.km === 7.5 && u1.minutes === 41, '"7,5 km" and "41 min" keep their magnitude');
+ok(u2.km === 5.2 && u2.minutes === 30, 'metres and seconds are converted, not taken at face value');
 ok((await ctx.request.post(`${BASE}/api/import/apple-health`, { headers: { Authorization: 'Bearer nope', 'Content-Type': 'text/plain' }, data: 'x' })).status() === 401, 'wrong import token refused');
 await page.goto(`${BASE}/?import=2`);
 await page.waitForSelector('.toast');
@@ -241,7 +274,7 @@ await page.click('[data-act="importHelp"]');
 await page.waitForSelector('.import .help');
 ok((await page.textContent('.import .help')).includes('Genveje'), 'import setup help opens');
 const aksel = await (await ctx.request.get(`${BASE}/api/state`)).json();
-ok(aksel.activities.filter((a) => a.source === 'apple_health').length === 2 && aksel.activities.every((a) => a.source !== 'apple_health' || a.memberId === 'aksel'), 'imported runs belong to the token owner');
+ok(aksel.activities.filter((a) => a.source === 'apple_health').length === 6 && aksel.activities.every((a) => a.source !== 'apple_health' || a.memberId === 'aksel'), 'imported runs belong to the token owner');
 
 // Deleting a run logged by mistake. Aksel now has four runs: two typed, two
 // from Health. He may delete his own and nobody else's, and a deleted run must
@@ -261,21 +294,25 @@ await ctx.request.put(`${BASE}/api/me/prefs`, { data: { everyRun: false } });
 
 await page.click('[data-go="me"]');
 await page.waitForSelector('.runs .r');
-ok((await page.$$('.runs .r')).length === 4, 'Mig lists every logged run');
+ok((await page.$$('.runs .r')).length === 6, 'the list is cut to the latest six');
+ok((await page.textContent('.runs .more')).includes('VIS ALLE 8 TURE'), 'and offers the rest');
+await page.click('[data-act="moreRuns"]');
+ok((await page.$$('.runs .r')).length === 8, 'VIS ALLE shows every run');
 ok((await page.textContent('.runs .r:first-child .m')).includes('fra Sundhed'), 'imported runs are marked in the list');
 await page.click('[data-view="andreas"]');
 ok((await page.$$('.runs .r')).length > 0 && (await page.$$('.runs .rm')).length === 0, 'no delete buttons on another member\'s runs');
 await page.click('[data-view="aksel"]');
+await page.click('[data-act="moreRuns"]');
 const health = page.locator('.runs .r', { hasText: '3,12' });
 await health.locator('.rm').click();
 await page.waitForSelector('.runs .r.confirming');
 await page.click('[data-act="cancelDelete"]');
-ok((await page.$$('.runs .r.confirming')).length === 0 && (await page.$$('.runs .r')).length === 4, 'BEHOLD backs out and deletes nothing');
+ok((await page.$$('.runs .r.confirming')).length === 0 && (await page.$$('.runs .r')).length === 8, 'BEHOLD backs out and deletes nothing');
 await health.locator('.rm').click();
 await page.click('[data-delyes]');
-await page.waitForFunction(() => document.querySelectorAll('.runs .r').length === 3);
+await page.waitForFunction(() => !document.querySelector('.runs')?.textContent.includes('3,12'));
 ok((await page.textContent('.toast')).includes('SLETTET · 3,12 KM'), 'toast names what was deleted');
-ok(!(await page.textContent('.runs')).includes('3,12'), 'the run is off the list');
+ok((await page.$$('.runs .r')).length === 7, 'one row fewer');
 const reimport = await (await ctx.request.post(`${BASE}/api/import/apple-health`, {
   headers: { Authorization: `Bearer ${tok.token}` },
   data: { runs: [{ start: `${daysAgo(0)}T05:10:00+02:00`, km: 3.12, minutes: 20.5 }, { start: `${daysAgo(1)}T05:00:00+02:00`, km: 2, minutes: 14 }] },
@@ -302,8 +339,9 @@ await page.waitForSelector('.hero');
 await page.click('[data-go="me"]');
 await page.waitForSelector('.runs .r');
 await page.click('[data-view="aksel"]');
+await page.click('[data-act="moreRuns"]');
 const akselRuns = (await page.$$('.runs .r')).length;
-ok(akselRuns === 3 && (await page.$$('.runs .rm')).length === 3, 'admin sees delete on another member\'s runs');
+ok(akselRuns === 7 && (await page.$$('.runs .rm')).length === 7, 'admin sees delete on another member\'s runs');
 await page.locator('.runs .r').first().locator('.rm').click();
 await page.click('[data-delyes]');
 await page.waitForFunction((n) => document.querySelectorAll('.runs .r').length === n, akselRuns - 1);

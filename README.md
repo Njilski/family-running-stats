@@ -45,6 +45,12 @@ every commit; it needs an empty store.
   (`deletedAt` on the row), so the record survives in Firestore and can be put
   back by hand; every read path skips it, the messages it caused are removed,
   and an imported run stays deduped so it cannot return on the next import.
+- **Apple Health import**: `POST /api/import/apple-health` with a signed import
+  token. Body is four parallel newline-separated columns —
+  `{ dates, km, minutes, types }` — because Shortcuts applies an action to a
+  whole list at once, so the shortcut needs no Repeat loop. Numbers are read
+  with or without units. `{ runs: [...] }` and `start|km|minutes|type` lines are
+  still accepted. Build instructions: `docs-shortcut.md`.
 - **Periods**: ISO week Mon 00:00 → Sun 23:59 (Europe/Copenhagen), calendar
   month, calendar year, all-time. Medals = closed weeks won on points.
 - **Beskeder** are generated on the server when a run is saved: OVERHALET (you

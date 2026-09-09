@@ -5,122 +5,107 @@ af familien installerer den fra linket. Knappen **IMPORTÉR FRA APPLE SUNDHED**
 i appen åbner genvejen og giver den den indloggede løbers import-nøgle som
 input — så der er intet personligt inde i genvejen.
 
-Det tager 5–10 minutter. Navnene på handlingerne er dem, iPhone viser på dansk;
-det engelske navn står i parentes, hvis din telefon er på engelsk. Når du skal
-finde en handling, trykker du på **Søg efter handlinger** nederst og skriver
-søgeordet.
+**Ingen løkke.** Genveje kører automatisk en handling på *hele* listen, hvis du
+giver den en liste. Derfor henter vi datoerne i én handling, distancerne i én,
+varighederne i én og træningstyperne i én — fire lige lange kolonner — og lader
+serveren sætte rækkerne sammen igen. Alle handlinger ligger på samme niveau;
+der er intet at trække ind i noget andet.
+
+Handlingsnavnene nedenfor er dem, en dansk iPhone viser (kontrolleret på
+Andreas' telefon, 9. sep 2026); det engelske navn står i parentes. Du finder en
+handling ved at trykke **Søg efter handlinger** nederst og skrive søgeordet.
+
+Det tager 5–10 minutter.
 
 ---
 
 ## 0. Opret genvejen
 
-1. Åbn appen **Genveje** (Shortcuts) → fanen **Genveje** → **+** øverst til højre.
-2. Tryk på titlen øverst («Ny genvej») → **Omdøb** → skriv præcis: `Løbeklub import` → OK.
+1. Åbn appen **Genveje** → fanen **Genveje** → **+** øverst til højre.
+2. Tryk på titlen øverst → **Omdøb** → skriv præcis: `Løbeklub import` → OK.
 
 Du behøver **ikke** en «Modtag input»-handling. Appen sender nøglen som
 *Genvejsinput*, og den variabel findes altid.
 
 ---
 
-## 1. Find træningerne i Sundhed
+## 1. Find træningerne
 
-Søg **sundhed** → vælg **Find sundhedsprøver** (Find Health Samples).
+Søg **sundhed** → vælg **Find sundhedsmålinger** (Find Health Samples).
 
-Handlingen kommer ind som «Find *Alle sundhedsprøver* hvor …».
+> Den heder *målinger*, ikke «prøver» eller «data». Søger du på «detaljer»
+> finder du ingenting — de handlinger heder «Hent oplysninger om …».
 
-- Tryk på det blå **Alle sundhedsprøver**. Der åbner en lang liste af typer med et
-  søgefelt øverst. Skriv **træn** i søgefeltet (eller rul helt til bunden) — den
-  sidste gruppe hedder **Træning** / **Træninger** (Workouts). Vælg den. Den
-  ligger *ikke* under skridt, puls osv., så den er let at overse.
-- Tryk **Tilføj filter** → **Startdato** (Start Date) · **er i de sidste** (is in
-  the last) · **30** · **dage**.
+Handlingen kommer ind som «Find *Alle sundhedsmålinger* hvor …».
+
+- Tryk på det blå **Alle sundhedsmålinger**. Der åbner en lang liste af typer
+  med et søgefelt øverst. Skriv **træn** i søgefeltet — vælg gruppen for
+  træninger (Workouts). Den ligger til sidst, ikke oppe blandt skridt og puls,
+  så den er let at overse.
+- Tryk **Tilføj filter** → **Startdato** · **er i de sidste** · **30** · **dage**.
 - Der skal **ikke** filtreres på træningstype — serveren sorterer selv gåture,
-  cykling og styrke fra og beholder løb (se 3d).
+  cykling og styrke fra og beholder løb (se trin 2d).
 - **Sortér efter**: Startdato. **Begræns**: slået fra.
 
-Resultatet af denne handling hedder **Sundhedsprøver** — det skal vi bruge om et øjeblik.
+Resultatet heder **Sundhedsmålinger**. Alle fire kolonner nedenfor peger på det.
 
 ---
 
-## 2. En tom liste at samle linjer i
+## 2. De fire kolonner
 
-Søg **tekst** → vælg **Tekst** (Text). Lad feltet være **tomt**.
+Hver kolonne er det samme lille mønster: hent én oplysning for *alle*
+træningerne, og lim listen sammen til én tekst med linjeskift.
 
-Søg **variabel** → vælg **Angiv variabel** (Set Variable). Kald den `linjer`.
-Den skal sættes til **Tekst** (den tomme tekst lige ovenfor) — det sker af sig selv.
+Handlingen, der henter en oplysning, heder **Hent oplysninger om
+sundhedsmåling** (Get Details of Health Sample) — søg på **oplysninger**.
+Handlingen, der limer sammen, heder **Kombinér tekst** (Combine Text) — søg på
+**kombinér**, og sæt den til at kombinere med **Nye linjer**.
 
----
+### 2a. Datoerne — byg denne først og tjek den
 
-## 3. Løkken: én linje pr. løbetur
+1. **Hent oplysninger om sundhedsmåling** → **Oplysning** = **Startdato**,
+   input = **Sundhedsmålinger** (fra trin 1).
+2. **Formatér dato** (Format Date) → **Datoformat**: **ISO 8601**. Tryk
+   **Vis mere** → slå **ISO 8601-tid** **til**.
+3. **Kombinér tekst** med **Nye linjer**.
+4. **Angiv variabel** (Set Variable) → navn `datoer`.
 
-Søg **gentag** → vælg **Gentag for hver** (Repeat with Each).
+**Stop her og tjek.** Tryk ▶︎ nederst. Resultatet af *Kombinér tekst* skal være
+**én linje pr. træning** — har du løbet fem gange på 30 dage, står der fem
+datoer. Står der kun én, kører Genveje ikke handlingen på hele listen på din
+iOS-version; sig til, så laver jeg løkke-udgaven i stedet. Er der flere linjer,
+er resten bare det samme tre gange.
 
-Den skal gentage for **Sundhedsprøver** (resultatet fra trin 1). Hvis den har
-valgt noget andet: tryk på den blå variabel i handlingen, vælg **Vælg variabel**
-og peg på Find sundhedsprøver-handlingen.
+### 2b. Distancerne
+1. **Hent oplysninger om sundhedsmåling** → **Oplysning** = distancen,
+   input = **Sundhedsmålinger**.
+2. **Konverter måleenhed** (Convert Measurement) → til **Kilometer**.
+3. **Kombinér tekst** med **Nye linjer**.
+4. **Angiv variabel** → `km`.
 
-Alt herunder skal ligge **inde i** løkken, dvs. mellem «Gentag for hver» og
-«Afslut gentagelse». Handlinger, du tilføjer mens løkken er valgt, lander der.
+### 2c. Varighederne
+1. **Hent oplysninger om sundhedsmåling** → **Oplysning** = varigheden,
+   input = **Sundhedsmålinger**.
+2. **Konverter måleenhed** → til **Minutter**.
+3. **Kombinér tekst** med **Nye linjer**.
+4. **Angiv variabel** → `minutter`.
 
-### 3a. Distancen i km
-Søg **detaljer** → **Hent detaljer om sundhedsprøve** (Get Details of Health Sample).
-- Tryk på **Detalje** → vælg **Distance**.
-- Input skal være **Gentag-element** (Repeat Item).
+### 2d. Træningstyperne
+1. **Hent oplysninger om sundhedsmåling** → **Oplysning** = træningstypen,
+   input = **Sundhedsmålinger**.
+2. **Kombinér tekst** med **Nye linjer**.
+3. **Angiv variabel** → `typer`.
 
-Søg **konverter** → **Konverter måleenhed** (Convert Measurement).
-- Konverterer **Detaljer om sundhedsprøve** (lige ovenfor) til **Kilometer** (km).
+Det er den, serveren bruger til at beholde løb («Løb», «Udendørs løb»,
+«Running») og springe resten over.
 
-### 3b. Varigheden i minutter
-Igen **Hent detaljer om sundhedsprøve** → **Detalje** = **Varighed** (Duration), input **Gentag-element**.
-
-Igen **Konverter måleenhed** → til **Minutter** (min).
-
-### 3c. Starttidspunktet som ISO-dato
-Igen **Hent detaljer om sundhedsprøve** → **Detalje** = **Startdato** (Start Date), input **Gentag-element**.
-
-Søg **formatér** → **Formatér dato** (Format Date).
-- Dato: **Detaljer om sundhedsprøve** (startdatoen lige ovenfor).
-- **Datoformat**: **ISO 8601**.
-- Tryk **Vis mere** → slå **ISO 8601-tid** (Include ISO 8601 Time) **til**.
-
-### 3d. Træningstypen
-Igen **Hent detaljer om sundhedsprøve** → **Detalje** = **Træningstype** /
-**Aktivitetstype** (Workout Activity Type), input **Gentag-element**. Det er
-den, serveren bruger til at beholde løb («Løb», «Running») og springe resten over.
-
-### 3e. Selve linjen
-Søg **tekst** → **Tekst**. Skriv linjen med de fire variabler indsat via
-**Vælg variabel** (tryk i feltet → variabel-knappen over tastaturet):
-
-```
-[Formateret dato]|[Konverteret måleenhed fra 3a]|[Konverteret måleenhed fra 3b]|[Træningstype fra 3d]
-```
-
-Altså: den formaterede dato, en lodret streg `|`, kilometrene, `|`, minutterne,
-`|`, træningstypen. Ingen mellemrum. Hvis appen viser flere variabler med samme
-navn, så vælg dem via **Vælg variabel** og peg på den rigtige handling i listen.
-
-Tip: tryk på en indsat måleenheds-variabel → du kan slå **Vis enhed** fra, så
-der står `6,23` og ikke `6,23 km`. (Serveren klarer begge dele, og både komma og
-punktum.)
-
-Søg **føj til** → **Føj til variabel** (Add to Variable) → variabel `linjer`.
-Den føjer **Tekst** (linjen ovenfor) til listen.
-
-*Her slutter det, der ligger inde i løkken.*
+> **Enheder er lige meget.** Om der står `6,23` eller `6,23 km` eller `6230 m`
+> betyder ikke noget — serveren læser tallet og enheden, hvis den er der. Du
+> behøver altså ikke lede efter **Vis enhed**. Komma og punktum går også begge.
 
 ---
 
-## 4. Saml linjerne til én tekst
-
-Efter **Afslut gentagelse**:
-
-Søg **kombinér** → **Kombinér tekst** (Combine Text).
-- Kombinér **linjer** (vælg variablen) med **Ny linje** (New Lines).
-
----
-
-## 5. Send til løbeklubben
+## 3. Send til løbeklubben
 
 Søg **URL** → **Hent indholdet af URL** (Get Contents of URL).
 
@@ -129,15 +114,25 @@ Søg **URL** → **Hent indholdet af URL** (Get Contents of URL).
 - Tryk **Vis mere**:
   - **Metode**: **POST**
   - **Sidehoveder** (Headers) → **Tilføj nyt sidehoved** to gange:
-    - Nøgle `Authorization` · Værdi: skriv `Bearer ` (med mellemrum) og indsæt
-      derefter variablen **Genvejsinput** (Shortcut Input) lige efter.
-    - Nøgle `Content-Type` · Værdi `text/plain`
-  - **Anmodningstekst** (Request Body): vælg **Fil** (File) → **Kombineret tekst**
-    (resultatet fra trin 4).
+    - Nøgle `Authorization` · Værdi: skriv `Bearer ` (med mellemrum til sidst) og
+      indsæt derefter variablen **Genvejsinput** (Shortcut Input) lige efter.
+    - Nøgle `Content-Type` · Værdi `application/json`
+  - **Anmodningstekst** (Request Body): **JSON**. Tilføj fire felter, alle af
+    typen **Tekst**:
+
+| Nøgle      | Værdi (variabel) |
+| ---------- | ---------------- |
+| `dates`    | `datoer`         |
+| `km`       | `km`             |
+| `minutes`  | `minutter`       |
+| `types`    | `typer`          |
+
+Nøglerne skal staves præcis som i tabellen (engelsk, små bogstaver). Værdierne
+indsætter du med variabel-knappen over tastaturet.
 
 ---
 
-## 6. Vis resultatet i appen
+## 4. Vis resultatet i appen
 
 Søg **ordbog** → **Hent ordbogsværdi** (Get Dictionary Value).
 - Hent **Værdi** for nøglen `imported` i **Indholdet af URL**.
@@ -150,16 +145,16 @@ https://family-running-stats-731133621844.europe-west1.run.app/?import=[Ordbogsv
 
 — altså adressen og til sidst variablen **Ordbogsværdi** indsat lige efter `=`.
 
-Tryk **Færdig** øverst til højre. Det var det.
+Tryk **Færdig** øverst til højre. Det var det: 13 handlinger, alle i én lige række.
 
 ---
 
-## 7. Prøv den
+## 5. Prøv den
 
 Gå i løbeklub-appen → **LOG TUR** → **IMPORTÉR FRA APPLE SUNDHED →**.
 
 Første gang spørger iPhone:
-- om genvejen må læse **Træning** i Sundhed → **Tillad** (evt. **Slå alle til**)
+- om genvejen må læse træninger i Sundhed → **Tillad** (evt. **Slå alle til**)
 - om den må sende til `family-running-stats-…run.app` → **Tillad altid**
 
 Så hopper den tilbage til appen med «IMPORTERET · 3 NYE TURE FRA APPLE SUNDHED»
@@ -167,18 +162,24 @@ Så hopper den tilbage til appen med «IMPORTERET · 3 NYE TURE FRA APPLE SUNDHE
 anden gang skal den sige 0 nye; ingenting kommer med to gange.
 
 **Fejlsøgning**
+
 - «Arkivet eksisterer ikke / kunne ikke finde genvejen»: navnet er ikke præcis
   `Løbeklub import` — omdøb den.
-- Den siger «INGEN NYE TURE» men du har løbet: tjek at Nike Run Club / Strava /
-  Watch skriver til Sundhed (Sundhed-appen → profil → Apps → tillad *Skriv*
-  for Træning). Kun træninger af typen **Løb** tæller — de andre springes over
-  med vilje.
-- Rødt fejlfelt fra appen om ugyldigt token: åbn importen fra appen igen —
-  genvejen må ikke startes direkte fra Genveje.
+- Den siger «INGEN NYE TURE», men du har løbet: tjek at Nike Run Club / Strava /
+  Watch skriver til Sundhed (Sundhed → profil → Apps → tillad *Skriv* for
+  træninger). Kun træninger af typen løb tæller — resten springes over med vilje.
+- Rødt fejlfelt om ugyldigt token: åbn importen fra appen igen — genvejen må
+  ikke startes direkte fra Genveje, for så mangler nøglen.
+- Alle ture bliver afvist: kolonnerne er ikke lige lange. Kør ▶︎ og se, om de
+  fire *Kombinér tekst*-resultater har samme antal linjer. Det sker, hvis en af
+  de fire «Hent oplysninger»-handlinger peger på noget andet end
+  **Sundhedsmålinger**.
+- En tur kom ind med tosset distance: se på `km`-kolonnen i ▶︎-resultatet.
+  Serveren tager tallet som det står, med enhed eller uden.
 
 ---
 
-## 8. Del den med familien
+## 6. Del den med familien
 
 I Genveje: hold fingeren på genvejen → **Del** → **Kopiér iCloud-link**.
 
@@ -194,11 +195,16 @@ i appen. Én gang. Derefter er det ét tryk.
 
 ---
 
-### Hvorfor tekstlinjer og ikke JSON
-Genveje bygger en liste af linjer med to handlinger; en JSON-ordbog pr. tur er
-fem. Serveren tager begge formater, så genvejen er den simple.
+### Hvorfor fire kolonner og ikke JSON pr. tur
+
+En liste af ordbøger kræver **Gentag for hver** og otte handlinger inde i
+løkken, hver med en variabel, der skal pege på *Gentag-element*. Fire kolonner
+kræver ingen løkke. Serveren tager stadig begge formater (og en tekstlinje pr.
+tur, `start|km|minutter|type`), så en genvej bygget efter den gamle
+vejledning virker uændret.
 
 ### Hvis du vil have det helt automatisk senere
+
 Samme genvej kan køres af en **Automatisering** (Genveje → Automatisering → ny →
 *Tidspunkt* hver aften, eller *Træning* når en Watch-træning slutter) med «Kør
 straks» slået til — men så mangler den nøglen som input. Sig til, så bygger vi

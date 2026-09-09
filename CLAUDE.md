@@ -58,6 +58,17 @@ to the Shortcut as input), dedupes on `externalId = apple-health:<start ISO>`,
 and goes through the same `logRun()` as a typed run, so nudges fire and the
 adjustment snapshot applies. Only running workouts count.
 
+**The import body meets Shortcuts where it is.** Shortcuts runs an action over a
+whole list at once, so the endpoint's main shape is four parallel
+newline-separated columns — `{ dates, km, minutes, types }` — zipped by position
+(`runsFromColumns`). That is what lets the phone-side shortcut be 13 flat
+actions with no Repeat loop, which is the part people build wrong; the older
+`{ runs: [...] }` and `start|km|minutes|type` text formats still work. Values go
+through `measure()`, which reads "6,23", "6,23 km", "6230 m" and "1800 sek"
+alike, so the Shortcut's "Show Unit" toggle cannot break an import. The Danish
+action names in `docs-shortcut.md` were read off Andreas' phone — they are
+*sundhedsmålinger* and *Hent oplysninger om …*, never "prøver" or "detaljer".
+
 **Never re-render an input while it is being typed in.** The PIN boxes did, and
 the digits came out reversed (caret at the start of the recreated field). Update
 in place (PIN) or swap to an input only on tap and commit on blur/Enter (Log tur).
