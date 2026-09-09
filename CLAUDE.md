@@ -52,22 +52,19 @@ and `tag`, `ageHint`, `suggestion` are derived by `deriveMember()`. (3) On Log
 tur the big numbers are tappable for exact entry; `minutes` is a decimal
 (34:20 → 34.33) — the design's steppers alone were too coarse for real runs.
 
-**Imports are runs like any other.** `/api/import/apple-health` authenticates
-with a signed `import|<memberId>` token (issued to the signed-in member, passed
-to the Shortcut as input), dedupes on `externalId = apple-health:<start ISO>`,
-and goes through the same `logRun()` as a typed run, so nudges fire and the
-adjustment snapshot applies. Only running workouts count.
-
-**The import body meets Shortcuts where it is.** Shortcuts runs an action over a
-whole list at once, so the endpoint's main shape is four parallel
-newline-separated columns — `{ dates, km, minutes, types }` — zipped by position
-(`runsFromColumns`). That is what lets the phone-side shortcut be 13 flat
-actions with no Repeat loop, which is the part people build wrong; the older
-`{ runs: [...] }` and `start|km|minutes|type` text formats still work. Values go
-through `measure()`, which reads "6,23", "6,23 km", "6230 m" and "1800 sek"
-alike, so the Shortcut's "Show Unit" toggle cannot break an import. The Danish
-action names in `docs-shortcut.md` were read off Andreas' phone — they are
-*sundhedsmålinger* and *Hent oplysninger om …*, never "prøver" or "detaljer".
+**Imports have no client, and the two obvious ones are ruled out.**
+`/api/import/apple-health` works and is tested — signed `import|<memberId>`
+token, three body shapes, dedupe on `externalId = apple-health:<start ISO>` that
+counts deleted runs too, and it goes through the same `logRun()` as a typed run
+so nudges fire and the adjustment snapshot applies. What it lacks is something
+on the phone to call it. Shortcuts has no action that *reads* a workout (checked
+on the phone: *Log træning* writes, and *Find sundhedsmålinger* offers only
+quantity types), and Strava's API Policy §2.3 forbids showing one athlete's data
+to another, which is precisely what the board does. Three earlier guides were
+written on the Shortcuts assumption without ever testing it on a phone; the
+findings are in `docs-import.md`. Read it before proposing an import route, and
+test on a phone before writing a guide. The remaining candidate is the paid
+Health Auto Export app.
 
 **Never re-render an input while it is being typed in.** The PIN boxes did, and
 the digits came out reversed (caret at the start of the recreated field). Update
@@ -140,5 +137,5 @@ cheeky, and says what to do next. Colours only from the tokens in `styles.css`.
 - [ ] Family logs the first real runs
 - [ ] Invite link for new members
 - [ ] Push notifications / Sunday e-mail
-- [x] Apple Health import via Shortcut (endpoint + button); Andreas builds/shares the Shortcut per docs-shortcut.md, then sets SHORTCUT_URL
+- [ ] Apple Health import: endpoint done and tested, but no client exists — Shortcuts can't read workouts and Strava's API forbids a shared board (docs-import.md). UI removed 9 Sep 2026.
 - [ ] Strava/NRC direct: assessed and dropped (terms / no API) — Health covers them

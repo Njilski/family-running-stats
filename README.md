@@ -45,12 +45,8 @@ every commit; it needs an empty store.
   (`deletedAt` on the row), so the record survives in Firestore and can be put
   back by hand; every read path skips it, the messages it caused are removed,
   and an imported run stays deduped so it cannot return on the next import.
-- **Apple Health import**: `POST /api/import/apple-health` with a signed import
-  token. Body is four parallel newline-separated columns —
-  `{ dates, km, minutes, types }` — because Shortcuts applies an action to a
-  whole list at once, so the shortcut needs no Repeat loop. Numbers are read
-  with or without units. `{ runs: [...] }` and `start|km|minutes|type` lines are
-  still accepted. Build instructions: `docs-shortcut.md`.
+- **Importing runs**: nothing does, yet. The endpoint exists and is tested; no
+  route to it survived scrutiny. See "Importing runs" below and `docs-import.md`.
 - **Periods**: ISO week Mon 00:00 → Sun 23:59 (Europe/Copenhagen), calendar
   month, calendar year, all-time. Medals = closed weeks won on points.
 - **Beskeder** are generated on the server when a run is saved: OVERHALET (you
@@ -169,28 +165,35 @@ gcloud run services update family-running-stats --region europe-west1 --project 
   --set-secrets FAMILY_PIN=running-family-pin:latest,SESSION_SECRET=running-session-secret:latest
 ```
 
-## Import from Apple Health (covers Nike Run Club, Strava, Apple Watch)
+## Importing runs — currently nothing, and why
 
-A web page cannot read HealthKit, so the phone pushes. **IMPORTÉR FRA APPLE
-SUNDHED** on Log tur opens a shared iOS Shortcut with the runner's signed import
-token as input; the Shortcut reads the last 30 days of running workouts from
-Health and POSTs them to `/api/import/apple-health` (text lines
-`start|km|minutes|type` or JSON `{ runs: [...] }`), then reopens the app with
-`?import=<count>`. Runs are keyed on `apple-health:<start ISO>` so a re-import
-never duplicates; non-running workouts are skipped; the current adjustment is
-snapshotted at import time like any other run. How to build and share the
-Shortcut once: `docs-shortcut.md`. Set `SHORTCUT_URL` (and optionally
-`SHORTCUT_NAME`) on the service so the setup panel can link to it.
+The family types its runs in. There is no import button, because neither route
+works:
 
-Anything that syncs to Apple Health — Nike Run Club, Strava, the Watch — comes
-along for free. Direct Strava/NRC integrations were assessed and dropped:
-Strava's API terms forbid showing one user's data to others (the whole point of
-a family board) and require a paid developer subscription; Nike has no API.
+- **Shortcuts cannot read workouts.** The Sundhed app contributes *Log træning*
+  (write) but no read counterpart, and the type list in *Find sundhedsmålinger*
+  holds only quantity samples — steps, water, UV index — with no Workouts entry.
+  Verified on a phone, 9 Sep 2026, after three separate guides were written on
+  the assumption that it could.
+- **Strava's API may not feed a shared board.** [API Policy](https://www.strava.com/legal/api_policy)
+  §2.3: "Strava Data provided by a specific Strava user may be displayed or
+  disclosed in your Developer Application only to that user." §6.1 extends that
+  to data about other users even when public. A board where Andreas sees Maja's
+  kilometres is the prohibited use, not a corner case.
+
+`POST /api/import/apple-health` is still there, tested, and takes three body
+shapes (four parallel columns `{ dates, km, minutes, types }`, `{ runs: [...] }`,
+or `start|km|minutes|type` lines), with numbers read with or without units. Auth
+is a signed token from `GET /api/me/import-token`, as a Bearer header or
+`?token=`. The remaining candidate client is the paid Health Auto Export app,
+which posts workout JSON to any REST endpoint on a schedule — roughly 30 lines
+to support. Full write-up, including the Health XML export as a manual
+fallback: `docs-import.md`.
 
 ## Roadmap
 
 - Invite link for new members (`/join/<token>`), so a child can join from their own phone.
 - Push notifications for Beskeder (currently in-app only); a Sunday e-mail
   with the poster as a first step.
-- Automatic import (a nightly Shortcut automation per phone, or the paid
-  Health Auto Export app posting to the same endpoint) instead of one tap.
+- Automatic import: the Health Auto Export app posting workout JSON to the
+  existing endpoint is the only route left standing (see `docs-import.md`).

@@ -36,8 +36,6 @@
     addMember: false,
     confirmDelete: null, // activity id awaiting "JA, SLET" on Mig
     allRuns: false, // the run list on Mig is cut to the latest few by default
-    importInfo: null, // { token, shortcutUrl, shortcutName } fetched when the import panel opens
-    importOpen: false,
   };
 
   // --- API ------------------------------------------------------------------------
@@ -52,7 +50,7 @@
   }
 
   async function boot() {
-    // The Shortcut returns here with ?import=<count> after posting the runs.
+    // An importer that posts runs can send the browser back with ?import=<count>.
     const q = new URLSearchParams(location.search);
     if (q.has('import')) {
       const count = Number(q.get('import'));
@@ -252,29 +250,9 @@
         <button class="btn-block primary save" data-act="save" ${st.busy ? 'disabled' : ''}>GEM TUREN →</button>
         ${st.error ? `<div class="err">${esc(st.error)}</div>` : ''}
         <div class="note">Hele familien får en besked i samme sekund du gemmer. Taster du forkert, kan du slette turen igen under MIG.</div>
-      </div>
-      <div class="sec tight import">
-        <div class="label">ELLER HENT FRA TELEFONEN</div>
-        <button class="btn-block" data-act="importHealth" style="margin-top:10px" ${st.busy ? 'disabled' : ''}>IMPORTÉR FRA APPLE SUNDHED →</button>
-        <div class="note" style="margin-top:8px">Henter dine løbeture fra de sidste 30 dage — også dem fra Nike Run Club, Strava og Apple Watch, når de er i Sundhed. Intet kommer med to gange.</div>
-        <button class="reset ink" data-act="importHelp" style="margin-top:6px">${st.importOpen ? 'SKJUL OPSÆTNING' : 'FØRSTE GANG? SÅDAN SÆTTER DU DET OP'}</button>
-        ${st.importOpen ? importHelp() : ''}
       </div>`;
   }
 
-  function importHelp() {
-    const info = st.importInfo;
-    const name = info?.shortcutName || 'Løbeklub import';
-    return `<div class="help">
-      <p>Knappen åbner en genvej i appen Genveje, som læser dine løbeture i Sundhed og sender dem hertil. Genvejen skal ligge på telefonen én gang:</p>
-      <ol>
-        ${info?.shortcutUrl ? `<li><a href="${esc(info.shortcutUrl)}">Hent genvejen «${esc(name)}»</a> og tryk <b>Tilføj genvej</b>.</li>` : `<li>Få genvejen «${esc(name)}» fra ${esc(S.members.find((m) => m.isAdmin)?.name || 'admin')} og tilføj den i Genveje.</li>`}
-        <li>Tryk <b>IMPORTÉR FRA APPLE SUNDHED</b> herover.</li>
-        <li>Første gang spørger iPhone om adgang til Sundhed — tryk <b>Tillad</b>, og om appen må sende til løbeklubben — tryk <b>Tillad altid</b>.</li>
-      </ol>
-      <p>Bagefter er det ét tryk. Importerede ture tæller som alle andre og bliver justeret med din nuværende justering.</p>
-    </div>`;
-  }
 
   // 3. Mig
   function me() {
@@ -550,8 +528,6 @@
       if (d.day) { st.day = d.day; st.error = ''; return render(); }
       if (d.feel) { st.feel = d.feel; return render(); }
       if (d.act === 'save') return saveRun();
-      if (d.act === 'importHealth') return importHealth();
-      if (d.act === 'importHelp') { st.importOpen = !st.importOpen; if (st.importOpen && !st.importInfo) st.importInfo = await api('GET', '/api/me/import-token'); return render(); }
       if (d.act === 'logout') { await api('POST', '/api/logout'); S = null; st.loginPick = null; st.pin = ''; st.error = ''; st.screen = 'login'; return render(); }
       if (d.dismiss) { await api('POST', `/api/nudges/${encodeURIComponent(d.dismiss)}/dismiss`); S.nudges = S.nudges.filter((x) => x.id !== d.dismiss); return render(); }
       if (d.pref) { const next = { [d.pref]: !S.prefs[d.pref] }; S.prefs = { ...S.prefs, ...next }; render(); const r = await api('PUT', '/api/me/prefs', next); S.prefs = r.prefs; return refresh(false); }
@@ -669,19 +645,6 @@
     st.busy = false; render();
   }
 
-  // Hand off to the iOS Shortcut with this runner's import token as its input.
-  // The Shortcut posts the runs and opens the app again with ?import=<count>.
-  async function importHealth() {
-    st.error = '';
-    try {
-      st.importInfo = st.importInfo || (await api('GET', '/api/me/import-token'));
-      const name = st.importInfo.shortcutName || 'Løbeklub import';
-      const url = `shortcuts://run-shortcut?name=${encodeURIComponent(name)}&input=text&text=${encodeURIComponent(st.importInfo.token)}`;
-      location.href = url;
-      // If nothing happened the Shortcut is probably not installed: show the setup.
-      setTimeout(() => { if (!document.hidden) { st.importOpen = true; render(); } }, 1500);
-    } catch (err) { st.error = err.message; render(); }
-  }
 
   async function saveAdjustments() {
     const changes = Object.entries(st.draftAdjust || {}).filter(([id, v]) => member(id).adjustment !== v);

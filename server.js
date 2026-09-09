@@ -152,16 +152,19 @@ async function logRun(members, actor, activity, now) {
 
 // --- Import from Apple Health ------------------------------------------------------------------
 //
-// A web page cannot read HealthKit, so the phone pushes: the app opens a shared
-// iOS Shortcut and hands it the signed-in runner's import token; the Shortcut
-// reads recent running workouts from Health and posts them here. Runs are keyed
-// on their start time, so importing twice never duplicates. Nike Run Club,
-// Strava and Apple Watch all write into Health, so this covers them too.
+// A web page cannot read HealthKit, so something on the phone has to push. What
+// that something is remains open: Shortcuts turned out to have no action that
+// *reads* a workout, and Strava's API may not show one athlete's data to
+// another, which is what a family board is. See docs-import.md — the two dead
+// ends are written down there so they are not rebuilt a fourth time.
+//
+// The endpoint stays: it is small, tested, and the day a client exists (the
+// Health Auto Export app is the likely one) it is a config screen away. Runs
+// are keyed on their start time, so importing twice never duplicates.
 
 app.get('/api/me/import-token', requireMember, (req, res) => {
-  res.json({ token: sign(`import|${req.member.id}`), shortcutUrl: process.env.SHORTCUT_URL || null, shortcutName: SHORTCUT_NAME });
+  res.json({ token: sign(`import|${req.member.id}`) });
 });
-const SHORTCUT_NAME = process.env.SHORTCUT_NAME || 'Løbeklub import';
 
 async function memberFromImportToken(req) {
   const raw = (req.get('authorization') || '').replace(/^Bearer\s+/i, '').trim() || String(req.query.token || '');

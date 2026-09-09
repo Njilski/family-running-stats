@@ -270,9 +270,7 @@ await page.click('[data-go="me"]');
 await page.waitForSelector('.me-head');
 ok((await page.textContent('.grid2')).includes('fra Sundhed'), 'Mig shows how many runs came from Health');
 await page.click('[data-go="log"]');
-await page.click('[data-act="importHelp"]');
-await page.waitForSelector('.import .help');
-ok((await page.textContent('.import .help')).includes('Genveje'), 'import setup help opens');
+ok((await page.$$('[data-act="importHealth"], [data-act="importHelp"]')).length === 0, 'Log tur promises no Shortcut import (Shortcuts cannot read workouts)');
 const aksel = await (await ctx.request.get(`${BASE}/api/state`)).json();
 ok(aksel.activities.filter((a) => a.source === 'apple_health').length === 6 && aksel.activities.every((a) => a.source !== 'apple_health' || a.memberId === 'aksel'), 'imported runs belong to the token owner');
 
