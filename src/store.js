@@ -20,4 +20,5 @@ export const {
   deleteActivity,
   listNudges,
   saveNudges,
+  deleteNudgesForActivity,
 } = impl;

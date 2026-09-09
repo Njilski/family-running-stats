@@ -191,7 +191,11 @@ app.post('/api/import/apple-health', express.text({ type: ['text/*', 'applicatio
   const today = localDate(now);
   const members = await store.listMembers();
   const actor = members.find((m) => m.id === member.id);
-  const existing = new Set((await store.listActivities()).filter((a) => a.memberId === actor.id).map((a) => a.externalId).filter(Boolean));
+  // Deleted runs count as known: a run you threw away must not come back on the
+  // next import.
+  const existing = new Set(
+    (await store.listActivities({ includeDeleted: true })).filter((a) => a.memberId === actor.id).map((a) => a.externalId).filter(Boolean)
+  );
   let imported = 0, skipped = 0, rejected = 0;
   for (const r of runs.slice(0, 500)) {
     if (r.type && !/run|løb/i.test(String(r.type))) { skipped += 1; continue; }
@@ -213,15 +217,17 @@ app.post('/api/import/apple-health', express.text({ type: ['text/*', 'applicatio
   res.json({ ok: true, imported, skipped, rejected });
 });
 
-// Fixing a typo on your own run within the day it was logged. Adults (admins)
-// can fix anyone's. Points are recomputed from the *stored* snapshot.
+// A run logged by mistake. You delete your own; an admin deletes anyone's, so a
+// six-year-old's double tap does not need his own login to fix. The row is only
+// marked deleted, never dropped, and the messages it caused go with it.
 app.delete('/api/activities/:id', requireMember, async (req, res) => {
   const a = await store.getActivity(req.params.id);
-  if (!a) return res.status(404).json({ error: 'Turen findes ikke.' });
+  if (!a || a.deletedAt) return res.status(404).json({ error: 'Turen findes ikke længere.' });
   if (a.memberId !== req.member.id && !req.member.isAdmin) {
     return res.status(403).json({ error: 'Du kan kun slette dine egne ture.' });
   }
-  await store.deleteActivity(a.id);
+  await store.deleteActivity(a.id, req.member.id);
+  await store.deleteNudgesForActivity(a.id);
   res.json({ ok: true, state: await buildState(req.member) });
 });
 

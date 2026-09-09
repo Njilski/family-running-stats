@@ -52,10 +52,12 @@ export async function deleteMember(id) {
   save();
 }
 
-export async function listActivities() {
-  return [...db.activities].sort(byDateDesc);
+export async function listActivities({ includeDeleted = false } = {}) {
+  const list = includeDeleted ? db.activities : db.activities.filter((a) => !a.deletedAt);
+  return [...list].sort(byDateDesc);
 }
 
+// Returns deleted rows too; the caller decides what that means.
 export async function getActivity(id) {
   return db.activities.find((a) => a.id === id) || null;
 }
@@ -68,9 +70,19 @@ export async function saveActivity(activity) {
   return activity;
 }
 
-export async function deleteActivity(id) {
-  db.activities = db.activities.filter((a) => a.id !== id);
+export async function deleteActivity(id, by = null) {
+  const a = db.activities.find((x) => x.id === id);
+  if (!a) return;
+  a.deletedAt = new Date().toISOString();
+  a.deletedBy = by;
   save();
+}
+
+// A deleted run's messages ("Andreas loggede 6 km") would otherwise stand.
+export async function deleteNudgesForActivity(activityId) {
+  const before = db.nudges.length;
+  db.nudges = db.nudges.filter((n) => n.activityId !== activityId);
+  if (db.nudges.length !== before) save();
 }
 
 export async function listNudges() {

@@ -34,6 +34,8 @@
     editing: null, // 'dist' | 'mins' while a value on Log tur is being typed
     editMember: null, // member id whose details are open on Justering
     addMember: false,
+    confirmDelete: null, // activity id awaiting "JA, SLET" on Mig
+    allRuns: false, // the run list on Mig is cut to the latest few by default
     importInfo: null, // { token, shortcutUrl, shortcutName } fetched when the import panel opens
     importOpen: false,
   };
@@ -166,6 +168,10 @@
     if (st.screen === 'setup' && (st.editMember || st.addMember)) { const i = app.querySelector('.mform input'); if (i && !i.value) i.focus(); }
   }
 
+  function toast() {
+    return st.toast ? `<div class="toast num"><span>${esc(st.toast)}</span><button data-act="clearToast">OK</button></div>` : '';
+  }
+
   // 1. Tavlen
   function board() {
     const rows = ranked();
@@ -176,7 +182,7 @@
     const empty = !lead || lead.score === 0;
     return `
       <div class="seg">${PERIODS.map((x) => `<button class="${x.key === st.period ? 'on' : ''}" data-period="${x.key}">${x.label}</button>`).join('')}</div>
-      ${st.toast ? `<div class="toast num"><span>${esc(st.toast)}</span><button data-act="clearToast">OK</button></div>` : ''}
+      ${toast()}
       <div class="hero">
         <div class="top"><span>FØRENDE · ${esc(periodLabel())}</span><span>${st.adjusted ? 'JUSTERET' : 'RÅ KM'}</span></div>
         ${empty
@@ -245,7 +251,7 @@
       <div class="stack">
         <button class="btn-block primary save" data-act="save" ${st.busy ? 'disabled' : ''}>GEM TUREN →</button>
         ${st.error ? `<div class="err">${esc(st.error)}</div>` : ''}
-        <div class="note">Hele familien får en besked i samme sekund du gemmer. Ingen fortrydelsesret.</div>
+        <div class="note">Hele familien får en besked i samme sekund du gemmer. Taster du forkert, kan du slette turen igen under MIG.</div>
       </div>
       <div class="sec tight import">
         <div class="label">ELLER HENT FRA TELEFONEN</div>
@@ -292,6 +298,7 @@
     const imported = S.activities.filter((a) => a.memberId === v.id && a.source === 'apple_health' && a.date >= pr.from && a.date <= pr.to).length;
     return `
       <div class="chips">${S.members.map((m) => `<button class="${m.id === st.viewed ? 'on' : ''}" data-view="${m.id}">${up(m.name)}</button>`).join('')}</div>
+      ${toast()}
       <div class="sec">
         <div class="me-head">
           <div><div class="n">${esc(v.name)}</div><div class="t num">${up(v.tag)} · JUSTERING ×${n(v.adjustment, 2)}</div></div>
@@ -307,6 +314,7 @@
       <div class="sec tight"><div class="label">SIDSTE 7 DAGE · KM</div>
         <div class="bars7">${ms.week7.map((d) => `<div><div class="${d.km === 0 ? 'fill-n300' : d.km === maxDay ? 'fill-red' : 'fill-ink'}" style="height:${Math.max(3, (d.km / maxDay) * 100).toFixed(0)}%"></div><div class="d">${d.day}</div></div>`).join('')}</div>
       </div>
+      ${runList(v)}
       <div class="sec tight">
         <div class="label-row"><span class="label">EN MOD EN · ${esc(periodLabel())}</span><span class="verdict">${isMe ? 'DU' : up(v.name)} ${wins >= 3 ? `VINDER ${wins}/4` : `TABER ${4 - wins}/4`}</span></div>
         <div class="rivals">${S.members.filter((m) => m.id !== v.id).map((m) => `<button class="${m.id === st.rival ? 'on' : ''}" data-rival="${m.id}">MOD ${up(m.name)}</button>`).join('')}</div>
@@ -321,6 +329,45 @@
         <button class="btn-block" data-go="setup">SÆT JUSTERING PR. MEDLEM →</button>
         <button class="btn-block" data-act="logout">SKIFT FAMILIEMEDLEM →</button>
       </div>`;
+  }
+
+  // Every logged run, newest first, so a mistake can be taken off the board
+  // again. You may delete your own; an admin may delete anyone's.
+  const RUNS_SHOWN = 6;
+  function runList(v) {
+    const isMe = v.id === S.me.id;
+    const mine = S.activities.filter((a) => a.memberId === v.id);
+    const canDelete = isMe || S.me.isAdmin;
+    const shown = st.allRuns ? mine : mine.slice(0, RUNS_SHOWN);
+    return `<div class="sec tight runs">
+      <div class="label-row"><span class="label">LOGGEDE TURE</span>${mine.length && canDelete ? '<span class="hint">TASTET FORKERT? SLET DEN</span>' : ''}</div>
+      ${mine.length === 0
+        ? `<div class="note" style="margin-top:11px">${isMe ? 'Du har ikke logget en tur endnu.' : `${esc(v.name)} har ikke logget en tur endnu.`}</div>`
+        : `<div class="list">${shown.map((a) => runRow(a, canDelete)).join('')}</div>`}
+      ${st.error && st.confirmDelete === null ? `<div class="err">${esc(st.error)}</div>` : ''}
+      ${mine.length > RUNS_SHOWN ? `<button class="more" data-act="moreRuns">${st.allRuns ? 'VIS KUN DE SENESTE' : `VIS ALLE ${mine.length} TURE`}</button>` : ''}
+    </div>`;
+  }
+
+  function runRow(a, canDelete) {
+    const confirming = st.confirmDelete === a.id;
+    const meta = [
+      `${kmStr(a.km)} km`,
+      a.minutes ? `${minStr(a.minutes)} min · ${paceStr(a.minutes, a.km)}/km` : null,
+      a.source === 'apple_health' ? 'fra Sundhed' : null,
+    ].filter(Boolean).join(' · ');
+    return `<div class="r${confirming ? ' confirming' : ''}">
+      <div class="line">
+        <span class="who"><span class="d num">${up(fmtDate(a.date))}</span><span class="m num">${esc(meta)}</span></span>
+        <span class="pt num"><b>${n(a.points)}</b><span>point</span></span>
+        ${canDelete ? `<button class="rm" data-delrun="${esc(a.id)}" ${confirming ? 'disabled' : ''}>SLET</button>` : ''}
+      </div>
+      ${confirming ? `<div class="conf">
+        <span>Slet turen? Den forsvinder fra tavlen og fra pointene.</span>
+        <span class="acts"><button class="yes" data-delyes="${esc(a.id)}" ${st.busy ? 'disabled' : ''}>JA, SLET</button><button class="no" data-act="cancelDelete">BEHOLD</button></span>
+        ${st.error ? `<div class="err">${esc(st.error)}</div>` : ''}
+      </div>` : ''}
+    </div>`;
   }
 
   // 4. Familien
@@ -477,8 +524,9 @@
     try {
       if (d.go) {
         st.error = '';
+        st.confirmDelete = null;
         if (d.go !== 'board') st.toast = '';
-        if (d.go === 'me') { st.viewed = S.me.id; st.rival = defaultRival(S.me.id); }
+        if (d.go === 'me') { st.viewed = S.me.id; st.rival = defaultRival(S.me.id); st.allRuns = false; }
         if (d.go === 'setup') { st.draftAdjust = {}; st.editMember = null; st.addMember = false; }
         st.screen = d.go;
         render();
@@ -489,8 +537,12 @@
       if (d.period) { st.period = d.period; return render(); }
       if (d.act === 'toggleMode') { st.adjusted = !st.adjusted; return render(); }
       if (d.act === 'clearToast') { st.toast = ''; return render(); }
-      if (d.open) { st.viewed = d.open; st.rival = defaultRival(d.open); st.screen = 'me'; return render(); }
-      if (d.view) { st.viewed = d.view; if (st.rival === d.view) st.rival = defaultRival(d.view); return render(); }
+      if (d.open) { st.viewed = d.open; st.rival = defaultRival(d.open); st.screen = 'me'; st.allRuns = false; st.confirmDelete = null; return render(); }
+      if (d.view) { st.viewed = d.view; if (st.rival === d.view) st.rival = defaultRival(d.view); st.allRuns = false; st.confirmDelete = null; st.error = ''; return render(); }
+      if (d.delrun) { st.confirmDelete = d.delrun; st.error = ''; return render(); }
+      if (d.act === 'cancelDelete') { st.confirmDelete = null; st.error = ''; return render(); }
+      if (d.delyes) return deleteRun(d.delyes);
+      if (d.act === 'moreRuns') { st.allRuns = !st.allRuns; return render(); }
       if (d.rival) { st.rival = d.rival; return render(); }
       if (d.act === 'dist') { st.editing = null; st.dist = Math.max(0.5, +(st.dist + Number(d.d)).toFixed(2)); return render(); }
       if (d.act === 'mins') { st.editing = null; st.mins = Math.max(1, +(st.mins + Number(d.d)).toFixed(2)); return render(); }
@@ -571,6 +623,18 @@
       st.toast = `GEMT · +${kmStr(r.activity.km)} KM (${n(r.activity.points, 1)} POINT)`;
       st.screen = 'board'; st.period = 'week';
       st.dist = 6.0; st.mins = 34; st.day = 'today'; st.pickDate = ''; st.feel = 'ok';
+    } catch (err) { st.error = err.message; }
+    st.busy = false; render();
+  }
+
+  async function deleteRun(id) {
+    const a = S.activities.find((x) => x.id === id);
+    st.busy = true; st.error = ''; render();
+    try {
+      const r = await api('DELETE', `/api/activities/${encodeURIComponent(id)}`);
+      S = r.state; afterState();
+      st.confirmDelete = null;
+      st.toast = `SLETTET · ${a ? `${kmStr(a.km)} KM ER VÆK FRA TAVLEN` : 'TUREN ER VÆK FRA TAVLEN'}`;
     } catch (err) { st.error = err.message; }
     st.busy = false; render();
   }

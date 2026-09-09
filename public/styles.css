@@ -194,6 +194,31 @@ button:disabled { cursor: default; }
 .h2h .pair > div:first-child { justify-content: flex-end; }
 .h2h .pair > div > div { height: 100%; }
 
+/* Mig: the logged runs, each one deletable */
+.runs .hint { font: 800 9.5px/1 var(--font); letter-spacing: .08em; color: var(--color-neutral-700); }
+.runs .list { margin-top: 11px; border-top: var(--hair); }
+.runs .r { border-bottom: var(--hair); }
+.runs .r.confirming { background: var(--color-accent-100); }
+.runs .r .line { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+.runs .who { flex: 1; min-width: 0; }
+.runs .who .d { display: block; font: 800 12px/1 var(--font); letter-spacing: .06em; }
+.runs .who .m { display: block; margin-top: 4px; font: 500 9.5px/1.2 var(--font); letter-spacing: .04em; color: var(--color-neutral-700); }
+.runs .pt { flex: none; text-align: right; }
+.runs .pt b { display: block; font: 900 15px/1 var(--font); letter-spacing: -.02em; }
+.runs .pt span { display: block; margin-top: 3px; font: 600 8.5px/1 var(--font); letter-spacing: .1em; text-transform: uppercase; color: var(--color-neutral-700); }
+.runs .rm { flex: none; border: var(--rule); background: transparent; font: 800 9px/1 var(--font); letter-spacing: .08em; padding: 7px 8px; }
+.runs .rm:hover:not(:disabled) { background: var(--color-accent-200); }
+.runs .rm:disabled { border-color: var(--color-neutral-400); color: var(--color-neutral-400); }
+.runs .conf { padding: 0 0 12px; }
+.runs .conf > span:first-child { display: block; font: 600 11px/1.4 var(--font); color: var(--color-accent-700); }
+.runs .conf .acts { display: flex; gap: 8px; margin-top: 9px; }
+.runs .conf button { border: var(--rule); background: transparent; font: 800 9.5px/1 var(--font); letter-spacing: .08em; padding: 9px 11px; }
+.runs .conf .yes { border-color: var(--red); background: var(--red); color: var(--white); }
+.runs .conf .yes:hover:not(:disabled) { background: var(--color-accent-600); border-color: var(--color-accent-600); }
+.runs .conf .yes:disabled { background: var(--color-neutral-400); border-color: var(--color-neutral-400); }
+.runs .conf .no:hover { background: var(--color-accent-200); }
+.runs .more { margin-top: 11px; border: 0; background: transparent; padding: 4px 0; font: 800 9px/1 var(--font); letter-spacing: .08em; color: var(--color-accent-700); }
+
 /* Familien */
 .family-total { display: flex; align-items: baseline; gap: 9px; margin-top: 9px; }
 .family-total b { font: 900 48px/1 var(--font); letter-spacing: -.04em; }

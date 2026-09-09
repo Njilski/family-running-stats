@@ -40,6 +40,11 @@ every commit; it needs an empty store.
   `isAdmin` on a member allows editing everyone's adjustment.
 - **Points** = km × `adjustmentAtLog`, a snapshot taken when the run is saved.
   Changing an adjustment never rewrites history ("Ændringer gælder fra næste tur").
+- **Deleting a run**: a run logged by mistake is removed from MIG — your own
+  always, anyone's if you are admin, with no time limit. It is a soft delete
+  (`deletedAt` on the row), so the record survives in Firestore and can be put
+  back by hand; every read path skips it, the messages it caused are removed,
+  and an imported run stays deduped so it cannot return on the next import.
 - **Periods**: ISO week Mon 00:00 → Sun 23:59 (Europe/Copenhagen), calendar
   month, calendar year, all-time. Medals = closed weeks won on points.
 - **Beskeder** are generated on the server when a run is saved: OVERHALET (you

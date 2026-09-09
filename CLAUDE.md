@@ -66,6 +66,14 @@ in place (PIN) or swap to an input only on tap and commit on blur/Enter (Log tur
 activity, never from the member's current adjustment. The Justering screen
 promises this in copy; the smoke test asserts it.
 
+**Deletes are soft, everywhere.** `deleteActivity` only stamps `deletedAt` /
+`deletedBy`; both stores hide those rows from `listActivities()`, so stats,
+nudges and the recap need no changes. Two consequences are easy to miss and are
+asserted in the smoke test: the nudges a run caused carry its `activityId` and
+are deleted with it, and the Health import checks `listActivities({
+includeDeleted: true })` so a deleted import cannot come back. Removing a
+*member* is still a hard delete of them and their runs.
+
 **Stats are computed server-side, per request** (`computeAll`). A family logs
 hundreds of runs a year; it is microseconds. `/api/state` returns all four
 periods at once so the period switch is instant and offline-safe. Do not move

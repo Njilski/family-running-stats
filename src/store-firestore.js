@@ -56,11 +56,13 @@ export async function deleteMember(id) {
   await batch.commit();
 }
 
-export async function listActivities() {
+export async function listActivities({ includeDeleted = false } = {}) {
   const snap = await activities.get();
-  return snap.docs.map((d) => d.data()).sort(byDateDesc);
+  const list = snap.docs.map((d) => d.data());
+  return (includeDeleted ? list : list.filter((a) => !a.deletedAt)).sort(byDateDesc);
 }
 
+// Returns deleted rows too; the caller decides what that means.
 export async function getActivity(id) {
   const doc = await activities.doc(id).get();
   return doc.exists ? doc.data() : null;
@@ -71,8 +73,19 @@ export async function saveActivity(activity) {
   return activity;
 }
 
-export async function deleteActivity(id) {
-  await activities.doc(id).delete();
+// Soft delete: a run logged by mistake leaves the board but stays in Firestore,
+// so a wrong deletion can still be undone by hand.
+export async function deleteActivity(id, by = null) {
+  await activities.doc(id).update({ deletedAt: new Date().toISOString(), deletedBy: by });
+}
+
+// A deleted run's messages ("Andreas loggede 6 km") would otherwise stand.
+export async function deleteNudgesForActivity(activityId) {
+  const snap = await nudges.where('activityId', '==', activityId).get();
+  if (snap.empty) return;
+  const batch = db.batch();
+  snap.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
 }
 
 export async function listNudges() {

@@ -11,6 +11,8 @@ const CLOSE_GAP_POINTS = 5;
 export function nudgesForSave({ members, before, after, activity, actor, now }) {
   const out = [];
   const createdAt = now.toISOString();
+  // Every nudge here is caused by one run; delete that run and they go with it.
+  const nudge = (kind, to, text, at, pref, about = null) => ({ ...makeNudge(kind, to, text, at, pref, about), activityId: activity.id });
   const byId = new Map(members.map((m) => [m.id, m]));
   const posBefore = new Map(before.rows.map((r, i) => [r.memberId, i]));
   const kmText = fmt(activity.km);
@@ -88,8 +90,8 @@ export function nudgesFor(member, all, now) {
   return list.map((n) => ({ ...n, time: n.time || relativeTime(n.createdAt, now) }));
 }
 
-function nudge(kind, to, text, createdAt, pref, about = null) {
-  return { id: newId(), kind, to, text, createdAt, pref, about, style: kind === 'OVERHALET' ? 'accent' : kind === 'STIME' ? 'neutral' : kind === 'NY TUR' ? 'neutral' : 'ink' };
+function makeNudge(kind, to, text, createdAt, pref, about = null) {
+  return { id: newId(), kind, to, text, createdAt, pref, about, activityId: null, style: kind === 'OVERHALET' ? 'accent' : kind === 'STIME' ? 'neutral' : kind === 'NY TUR' ? 'neutral' : 'ink' };
 }
 
 function relativeTime(iso, now) {

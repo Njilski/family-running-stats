@@ -67,6 +67,7 @@ const ok = (cond, msg) => { if (!cond) throw new Error('FAILED: ' + msg); consol
   const nudges = nudgesForSave({ members, actor: byId.andreas, activity: acts[1], now, before, after: { ...after, activities: afterActs } });
   ok(nudges.some((n) => n.kind === 'OVERHALET' && n.to === 'maja' && n.text.includes('førstepladsen')), 'overtaken nudge goes to the old leader');
   ok(nudges.some((n) => n.kind === 'STIME' && n.to === null), 'streak nudge for everyone');
+  ok(nudges.length > 0 && nudges.every((n) => n.activityId === acts[1].id), 'every nudge names the run that caused it');
   const seen = nudgesFor(byId.maja, nudges, now);
   ok(seen.some((n) => n.kind === 'OVERHALET') && !seen.some((n) => n.kind === 'NY TUR'), 'Maja sees the overtake, not every-run (pref off)');
   ok(nudgesFor(byId.andreas, nudges, now).every((n) => n.kind !== 'STIME'), 'you do not get nudged about yourself');
@@ -242,6 +243,45 @@ ok((await page.textContent('.import .help')).includes('Genveje'), 'import setup 
 const aksel = await (await ctx.request.get(`${BASE}/api/state`)).json();
 ok(aksel.activities.filter((a) => a.source === 'apple_health').length === 2 && aksel.activities.every((a) => a.source !== 'apple_health' || a.memberId === 'aksel'), 'imported runs belong to the token owner');
 
+// Deleting a run logged by mistake. Aksel now has four runs: two typed, two
+// from Health. He may delete his own and nobody else's, and a deleted run must
+// not come back on the next import.
+await ctx.request.put(`${BASE}/api/me/prefs`, { data: { everyRun: true } });
+const strayDate = new Date().toISOString().slice(0, 10);
+const stray = await (await a.request.post(`${BASE}/api/activities`, { data: { date: strayDate, km: 1.5, minutes: 9 } })).json();
+const nudgedNow = await (await ctx.request.get(`${BASE}/api/state`)).json();
+ok(nudgedNow.nudges.some((x) => x.kind === 'NY TUR' && x.text.includes('1,5 km')), 'the stray run produced a message');
+ok((await ctx.request.delete(`${BASE}/api/activities/${stray.activity.id}`)).status() === 403, 'you cannot delete another member\'s run');
+ok((await a.request.delete(`${BASE}/api/activities/${stray.activity.id}`)).ok(), 'the runner deletes their own run');
+const afterStray = await (await ctx.request.get(`${BASE}/api/state`)).json();
+ok(!afterStray.activities.some((x) => x.id === stray.activity.id), 'the deleted run is gone from the state');
+ok(!afterStray.nudges.some((x) => x.text.includes('1,5 km')), 'the messages the run caused go with it');
+ok((await a.request.delete(`${BASE}/api/activities/${stray.activity.id}`)).status() === 404, 'deleting twice is a 404, not a crash');
+await ctx.request.put(`${BASE}/api/me/prefs`, { data: { everyRun: false } });
+
+await page.click('[data-go="me"]');
+await page.waitForSelector('.runs .r');
+ok((await page.$$('.runs .r')).length === 4, 'Mig lists every logged run');
+ok((await page.textContent('.runs .r:first-child .m')).includes('fra Sundhed'), 'imported runs are marked in the list');
+await page.click('[data-view="andreas"]');
+ok((await page.$$('.runs .r')).length > 0 && (await page.$$('.runs .rm')).length === 0, 'no delete buttons on another member\'s runs');
+await page.click('[data-view="aksel"]');
+const health = page.locator('.runs .r', { hasText: '3,12' });
+await health.locator('.rm').click();
+await page.waitForSelector('.runs .r.confirming');
+await page.click('[data-act="cancelDelete"]');
+ok((await page.$$('.runs .r.confirming')).length === 0 && (await page.$$('.runs .r')).length === 4, 'BEHOLD backs out and deletes nothing');
+await health.locator('.rm').click();
+await page.click('[data-delyes]');
+await page.waitForFunction(() => document.querySelectorAll('.runs .r').length === 3);
+ok((await page.textContent('.toast')).includes('SLETTET · 3,12 KM'), 'toast names what was deleted');
+ok(!(await page.textContent('.runs')).includes('3,12'), 'the run is off the list');
+const reimport = await (await ctx.request.post(`${BASE}/api/import/apple-health`, {
+  headers: { Authorization: `Bearer ${tok.token}` },
+  data: { runs: [{ start: `${daysAgo(0)}T05:10:00+02:00`, km: 3.12, minutes: 20.5 }, { start: `${daysAgo(1)}T05:00:00+02:00`, km: 2, minutes: 14 }] },
+})).json();
+ok(reimport.imported === 0 && reimport.skipped === 2, 'a deleted import does not come back on the next import');
+
 // Non-admin cannot manage members.
 ok((await ctx.request.post(`${BASE}/api/members`, { data: { name: 'Ida', age: 8 } })).status() === 403, 'non-admin cannot add members');
 ok((await page.$$('[data-editmember]')).length === 0 || true, 'no edit controls for non-admin (checked below on setup)');
@@ -257,7 +297,18 @@ page.on('dialog', (d) => d.accept());
 await page.click('[data-pick="andreas"]');
 await page.keyboard.type(PIN, { delay: 60 });
 await page.waitForSelector('.hero');
+// An admin can take a run off anyone's list — a six-year-old's double tap does
+// not need his own login to undo.
 await page.click('[data-go="me"]');
+await page.waitForSelector('.runs .r');
+await page.click('[data-view="aksel"]');
+const akselRuns = (await page.$$('.runs .r')).length;
+ok(akselRuns === 3 && (await page.$$('.runs .rm')).length === 3, 'admin sees delete on another member\'s runs');
+await page.locator('.runs .r').first().locator('.rm').click();
+await page.click('[data-delyes]');
+await page.waitForFunction((n) => document.querySelectorAll('.runs .r').length === n, akselRuns - 1);
+ok(true, 'admin deletes another member\'s run');
+
 await page.click('[data-go="setup"]');
 await page.waitForSelector('.frow');
 ok((await page.$$('[data-editmember]')).length === 5, 'admin sees edit on every row');
